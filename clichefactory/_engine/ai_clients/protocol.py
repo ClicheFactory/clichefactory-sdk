@@ -98,8 +98,8 @@ class AIClient(Protocol):
     def supports_bytes(self, mime: str) -> bool:
         """Return ``True`` when ``extract_from_bytes`` can be called with *mime*.
 
-        Used by callers (the SDK ``Cliche.extract`` fast path,
-        ``aio-server`` extraction service) to decide between sending raw
+        Used by callers (the SDK ``Cliche.extract`` fast path, the
+        ClicheFactory extraction service) to decide between sending raw
         bytes to the vendor and parsing to markdown locally first.
         """
         ...

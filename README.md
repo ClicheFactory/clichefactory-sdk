@@ -69,7 +69,7 @@ c = client.cliche(Invoice)
 invoice = c.extract(file="/path/to/invoice.pdf")
 ```
 
-**Service URL:** The SDK talks to the public ClicheFactory API (`https://api.clichefactory.com`) out of the box — no configuration needed. To point at a different aio-server (local development, self-hosted instance), set **`CLICHEFACTORY_API_URL`** (e.g. `http://localhost:4000`) or pass **`base_url=`** to `factory()`. An explicit `base_url=` argument always wins over the env var.
+**Service URL:** The SDK talks to the public ClicheFactory API (`https://api.clichefactory.com`) out of the box — no configuration needed. To point at a different ClicheFactory backend (local development, self-hosted instance), set **`CLICHEFACTORY_API_URL`** (e.g. `http://localhost:4000`) or pass **`base_url=`** to `factory()`. An explicit `base_url=` argument always wins over the env var.
 
 Local paths (and raw bytes) are automatically uploaded by the SDK before the service processes them.
 
@@ -91,7 +91,7 @@ cliche = client.cliche(Invoice, artifact_id="art_8cee...")
 result = cliche.extract(file="document.pdf")
 ```
 
-**API keys:** Use a key from **ClicheFactory → Settings → API Keys** (`cliche-...`). Those keys authenticate as your account and are billed against your credits. They are not the same as internal aio-server operator keys used between services.
+**API keys:** Use a key from **ClicheFactory → Settings → API Keys** (`cliche-...`). Those keys authenticate as your account and are billed against your credits. They are not the same as internal operator keys used between ClicheFactory services.
 
 **BYOK vs hosted (service mode):**
 
@@ -410,7 +410,7 @@ For **local** runs, the primary extraction defaults are:
 
 Optional endpoints override extraction/OCR on `factory()` via `model` and `ocr_model`.
 
-For **service** mode, the only URL-related environment variable is **`CLICHEFACTORY_API_URL`**, used to override the default `https://api.clichefactory.com` (e.g. for local development or a self-hosted aio-server). An explicit `base_url=` on `factory()` wins over both.
+For **service** mode, the only URL-related environment variable is **`CLICHEFACTORY_API_URL`**, used to override the default `https://api.clichefactory.com` (e.g. for local development or a self-hosted ClicheFactory backend). An explicit `base_url=` on `factory()` wins over both.
 
 ### Ollama (local model inference)
 
@@ -473,7 +473,7 @@ Documents sync automatically every ~30 minutes, or immediately via the
 If you omit `project`/`task`, extraction works normally — your data just
 won't be visible in ClicheFactory.
 
-**Tenant id (HTTP APIs):** User API keys resolve to a **tenant id** stored with the key (typically your ClicheFactory user id as a string, e.g. `"1"`). Envelope `tenant_id="default"` is rewritten server-side to that tenant for inference. When calling aio-server REST endpoints directly (e.g. listing documents), pass **`tenant_id` matching your key’s tenant**, not the literal string `"default"`, or the request will be rejected.
+**Tenant id (HTTP APIs):** User API keys resolve to a **tenant id** stored with the key (typically your ClicheFactory user id as a string, e.g. `"1"`). Envelope `tenant_id="default"` is rewritten server-side to that tenant for inference. When calling ClicheFactory REST endpoints directly (e.g. listing documents), pass **`tenant_id` matching your key's tenant**, not the literal string `"default"`, or the request will be rejected.
 
 ## OCR language configuration
 

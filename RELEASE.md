@@ -35,7 +35,6 @@ Copy this block into your scratchpad and tick off as you go:
 - [ ] 7. uv publish
 - [ ] 8. Commit, tag, push (main + tag)
 - [ ] 9. Optional: GitHub release in the UI
-- [ ] 10. Bump the floor in aio-server, refresh lock, deploy
 ```
 
 ---
@@ -157,38 +156,6 @@ PyPI is the source of truth for `pip install`.
    `clichefactory-X.Y.Z.tar.gz`
 7. Keep "Set as the latest release" checked, **Publish release**
 
-### 10. Bump the floor in `aio-server`, refresh lock, deploy
-
-`aio-server` pulls `clichefactory[local]` from PyPI. Bump its floor
-so deployments grab the new wheel.
-
-```bash
-cd ~/ClicheFactory/aio-server
-```
-
-Edit `pyproject.toml`:
-
-```toml
-"clichefactory[local]>=X.Y.Z",
-```
-
-Refresh the lock file:
-
-```bash
-uv lock --upgrade-package clichefactory
-grep -n "clichefactory-X\.Y\.Z" uv.lock   # sanity check
-```
-
-Commit and push:
-
-```bash
-git add pyproject.toml uv.lock
-git commit -m "chore: bump clichefactory to X.Y.Z (<short reason>)"
-git push
-```
-
-Then redeploy the dev/prod aio-server (pull, `uv sync`, restart).
-
 ---
 
 ## Troubleshooting
@@ -203,12 +170,13 @@ Fix: bump to the next patch (e.g. `X.Y.(Z+1)`), wipe `dist/`, rebuild,
 republish. **Never** try to "fix" a published version in place — cut a
 new patch instead.
 
-### aio-server still pulls the old version after bumping
+### Downstream consumers still pull the old version after bumping
 
-`uv lock --upgrade-package clichefactory` is the magic command.
-Without `--upgrade-package`, `uv lock` will keep the existing pinned
-version even if the floor moved. After running it, `grep` the lock
-file to confirm the new version is actually pinned.
+If a downstream service pins the SDK and isn't picking up the new
+version, run `uv lock --upgrade-package clichefactory` in that
+consumer's repo. Without `--upgrade-package`, `uv lock` will keep the
+existing pinned version even if the floor moved. After running it,
+`grep` the lock file to confirm the new version is actually pinned.
 
 ### Token leaked into shell history
 

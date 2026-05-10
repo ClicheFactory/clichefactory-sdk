@@ -197,11 +197,9 @@ class Cliche(Generic[T]):
             tenant_id = "default"
             project_id = "default"
             task_id = "default"
-            environment = "dev"
         else:
             project_id = getattr(scope, "project_id", None) or getattr(self._client, "_project", None) or "default"
             task_id = getattr(scope, "task_id", None) or getattr(self._client, "_task", None) or "default"
-            environment = getattr(scope, "environment", None) or "dev"
             tenant_id = getattr(scope, "tenant_id", None) or "default"
 
         if isinstance(file, str) and file.startswith("s3://"):
@@ -226,7 +224,6 @@ class Cliche(Generic[T]):
                 tenant_id=tenant_id,
                 project_id=project_id,
                 task_id=task_id,
-                environment=environment,
                 upload_kind="document",
                 filename=fname,
                 data=file,
@@ -239,7 +236,6 @@ class Cliche(Generic[T]):
                 tenant_id=tenant_id,
                 project_id=project_id,
                 task_id=task_id,
-                environment=environment,
                 upload_kind="document",
                 file_path=file,
                 artifact_id=effective_artifact_id,
@@ -260,7 +256,6 @@ class Cliche(Generic[T]):
             ocr_llm=resolved_ocr_model or self._client._ocr_llm,  # type: ignore[attr-defined]
             project_id=project_id,
             task_id=task_id,
-            environment=environment,
             tenant_id=tenant_id,
             artifact_id=effective_artifact_id,
             document_id=presign_document_id,

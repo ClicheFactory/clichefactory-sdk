@@ -3,7 +3,7 @@
 Why this lives here
 -------------------
 
-Once aio-server is fronted by a load balancer with ≥2 replicas, transient
+Once the service is fronted by a load balancer with ≥2 replicas, transient
 failures (connection resets during deploys, cooperative 429s from the
 per-tenant rate limiter, the occasional 502 from the LB) become routine
 rather than exceptional. The server stores idempotency records keyed by

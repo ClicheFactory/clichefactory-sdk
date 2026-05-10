@@ -1,18 +1,17 @@
-"""Resolve the ClicheFactory service (aio-server) HTTP base URL."""
+"""Resolve the ClicheFactory service HTTP base URL."""
 
 from __future__ import annotations
 
 import os
 
 # Default points at the public ClicheFactory API. Local development sets
-# CLICHEFACTORY_API_URL (e.g. http://localhost:4000 or http://aio-server:8000
-# inside Docker networks) to override.
+# CLICHEFACTORY_API_URL (e.g. http://localhost:4000) to override.
 _DEFAULT = "https://api.clichefactory.com"
 _ENV = "CLICHEFACTORY_API_URL"
 
 
 def resolve_service_base_url(explicit: str | None) -> str:
-    """Return base URL for aio-server HTTP calls (no trailing slash).
+    """Return base URL for service HTTP calls (no trailing slash).
 
     *explicit* (e.g. ``factory(base_url=...)``) wins when set.
     Otherwise ``CLICHEFACTORY_API_URL`` is used when set in the environment.

@@ -101,7 +101,6 @@ class Scope:
     tenant_id: str | None = None
     project_id: str | None = None
     task_id: str | None = None
-    environment: str | None = None
 
 
 class Client:
@@ -168,7 +167,6 @@ class Client:
         tenant_id: str | None = None,
         project_id: str | None = None,
         task_id: str | None = None,
-        environment: str | None = None,
     ) -> "Client":
         warnings.warn(
             "with_scope() is deprecated. Pass project= and task= to factory(), "
@@ -190,7 +188,6 @@ class Client:
             tenant_id=tenant_id if tenant_id is not None else self._scope.tenant_id,
             project_id=project_id or self._scope.project_id,
             task_id=task_id or self._scope.task_id,
-            environment=environment or self._scope.environment,
         )
         return c
 
@@ -292,7 +289,6 @@ class Client:
         scope = self._scope
         project_id = scope.project_id or self._project or "default"
         task_id = scope.task_id or self._task or "default"
-        environment = scope.environment or "dev"
         tenant_id = scope.tenant_id or "default"
 
         if isinstance(file, str) and file.startswith("s3://"):
@@ -316,7 +312,6 @@ class Client:
                 tenant_id=tenant_id,
                 project_id=project_id,
                 task_id=task_id,
-                environment=environment,
                 upload_kind="document",
                 filename=fname,
                 data=file,
@@ -328,7 +323,6 @@ class Client:
                 tenant_id=tenant_id,
                 project_id=project_id,
                 task_id=task_id,
-                environment=environment,
                 upload_kind="document",
                 file_path=file,
             )

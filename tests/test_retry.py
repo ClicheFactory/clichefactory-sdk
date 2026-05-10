@@ -203,7 +203,7 @@ def test_propagates_transport_error_after_max_attempts() -> None:
 
 def test_send_invoked_identically_on_each_attempt() -> None:
     """The retry layer must not mutate the request between attempts —
-    that would break aio-server's idempotency replay (same key, same
+    that would break the service's idempotency replay (same key, same
     fingerprint)."""
     sleep = _FakeSleep()
     seen: list[object] = []

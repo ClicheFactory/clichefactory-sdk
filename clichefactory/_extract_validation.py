@@ -14,7 +14,7 @@ T = TypeVar("T", bound=BaseModel)
 class RawExtractionValidationError(Exception):
     """JSON parsed to a dict but ``model_validate`` failed.
 
-    Used when the caller needs the invalid payload (e.g. aio-server ``allow_partial``).
+    Used when the caller needs the invalid payload (e.g. service ``allow_partial``).
     The original :class:`pydantic.ValidationError` is chained as ``__cause__``.
     """
 

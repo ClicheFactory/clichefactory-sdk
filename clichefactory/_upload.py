@@ -1,6 +1,6 @@
 """Presigned-URL upload helpers for service mode.
 
-Handles presigning via aio-server and uploading file bytes via HTTP PUT.
+Handles presigning via the ClicheFactory service and uploading file bytes via HTTP PUT.
 """
 from __future__ import annotations
 
@@ -60,7 +60,6 @@ async def presign(
     tenant_id: str,
     project_id: str,
     task_id: str,
-    environment: str,
     upload_kind: UploadKind,
     filename: str,
     content_length: int | None = None,
@@ -69,14 +68,13 @@ async def presign(
     document_id: str | None = None,
     artifact_id: str | None = None,
 ) -> PresignResult:
-    """Call the aio-server presign endpoint and return the result."""
+    """Call the service presign endpoint and return the result."""
     url = resolve_service_base_url(base_url) + "/v1/uploads/presign"
 
     body: dict[str, Any] = {
         "tenant_id": tenant_id,
         "project_id": project_id,
         "task_id": task_id,
-        "environment": environment,
         "upload_kind": upload_kind,
         "filename": filename,
     }
@@ -91,7 +89,7 @@ async def presign(
     if artifact_id is not None:
         body["artifact_id"] = artifact_id
 
-    # Stable across retries so aio-server can replay the same presign result
+    # Stable across retries so the service can replay the same presign result
     # rather than minting a new file_uri / document_id every time.
     idempotency_key = _idempotency_key_for(body)
     request_headers = _headers(api_key, idempotency_key=idempotency_key)
@@ -182,7 +180,6 @@ async def presign_and_upload_file(
     tenant_id: str,
     project_id: str,
     task_id: str,
-    environment: str,
     upload_kind: UploadKind,
     file_path: str | Path,
     dataset_id: str | None = None,
@@ -209,7 +206,6 @@ async def presign_and_upload_file(
         tenant_id=tenant_id,
         project_id=project_id,
         task_id=task_id,
-        environment=environment,
         upload_kind=upload_kind,
         filename=filename,
         content_length=len(data),
@@ -236,7 +232,6 @@ async def presign_and_upload_bytes(
     tenant_id: str,
     project_id: str,
     task_id: str,
-    environment: str,
     upload_kind: UploadKind,
     filename: str,
     data: bytes,
@@ -253,7 +248,6 @@ async def presign_and_upload_bytes(
         tenant_id=tenant_id,
         project_id=project_id,
         task_id=task_id,
-        environment=environment,
         upload_kind=upload_kind,
         filename=filename,
         content_length=len(data),

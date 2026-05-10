@@ -29,7 +29,7 @@ T = TypeVar("T", bound=BaseModel)
 def _headers(api_key: str, *, idempotency_key: str | None = None) -> dict[str, str]:
     h = {"X-API-KEY": api_key, "Content-Type": "application/json"}
     if idempotency_key is not None:
-        # aio-server's public endpoints (/v1/ocr/to-markdown, /v1/uploads/presign,
+        # The service's public endpoints (/v1/ocr/to-markdown, /v1/uploads/presign,
         # /v1/extract, /v1/to-markdown) accept Idempotency-Key as a header; the
         # canonical envelope endpoint reads it from the body instead.
         h["Idempotency-Key"] = idempotency_key
@@ -40,7 +40,7 @@ def _idempotency_key_for(payload: dict[str, Any]) -> str:
     """Derive a stable Idempotency-Key from a request body.
 
     The same body must produce the same key on every retry attempt; that's
-    the contract aio-server's idempotency store keys off
+    the contract the service's idempotency store keys off
     (``(tenant_id, idempotency_key, endpoint)``). Sorting the JSON keys
     keeps dict-iteration order from leaking into the hash.
     """
@@ -127,7 +127,6 @@ async def service_extract_via_canonical(
     ocr_llm: Endpoint | None,
     project_id: str,
     task_id: str | None,
-    environment: str,
     tenant_id: str | None = None,
     artifact_id: str | None = None,
     document_id: str | None = None,
@@ -153,7 +152,6 @@ async def service_extract_via_canonical(
 
     scope: dict[str, Any] = {
         "project_id": project_id,
-        "environment": environment,
     }
     if tenant_id is not None:
         scope["tenant_id"] = tenant_id
@@ -201,7 +199,7 @@ async def service_extract_via_canonical(
         async with httpx.AsyncClient(timeout=120.0) as client:
             # Body is built once outside the retry loop, so idempotency_key
             # (in the envelope) is identical on every attempt — that's the
-            # contract aio-server keys off for replay.
+            # contract the service keys off for replay.
             async def _send() -> httpx.Response:
                 return await client.post(url, json=body, headers=_headers(api_key))
 
@@ -269,7 +267,7 @@ async def service_to_markdown(
     ocr_llm: Endpoint | None = None,
     parsing: ParsingOptions | None = None,
 ) -> ServiceDoc:
-    """POST /v1/ocr/to-markdown on the aio-server and return a ServiceDoc."""
+    """POST /v1/ocr/to-markdown on the service and return a ServiceDoc."""
     url = resolve_service_base_url(base_url) + "/v1/ocr/to-markdown"
 
     if not file_uri.startswith("s3://"):
@@ -296,7 +294,7 @@ async def service_to_markdown(
         body["parsing"] = parsing_payload
 
     # Derived once before the retry loop so every attempt sends the same
-    # key. aio-server replays the cached response when it sees a key it
+    # key. The service replays the cached response when it sees a key it
     # has seen complete before, preventing duplicate billing on retry.
     idempotency_key = _idempotency_key_for(body)
     request_headers = _headers(api_key, idempotency_key=idempotency_key)

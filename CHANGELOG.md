@@ -2,6 +2,35 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [0.5.0] — 2026-05-10
+
+### Removed
+
+- **`environment` plumbing dropped from the SDK.** The
+  `environment=` keyword argument on the deprecated
+  `Client.with_scope()`, the `environment` field on the internal
+  `Scope` dataclass, and the `"environment"` key on the canonical
+  envelope `scope` and on the presign request body are all gone.
+  The ClicheFactory backend treats `environment` as request metadata
+  only — it has not driven bucket selection or any other routing for
+  several releases — and the matching server-side request schemas
+  declare it optional with a default, so omitting it is wire-compatible
+  with the deployed service. No public caller in this codebase passed
+  `environment` through any of these surfaces, so this is effectively
+  a dead-code removal; the externally visible behavior is unchanged.
+
+### Documentation
+
+- Cleaned up internal-deployment naming in `README.md`, `RELEASE.md`,
+  and source-code comments / docstrings. Replaced references to a
+  specific internal backend service name with neutral phrasing
+  ("the ClicheFactory service" / "the backend"). No code paths
+  changed.
+- Moved the post-publish "bump the floor in downstream consumers" step
+  out of `RELEASE.md`. That step is operator-internal and lives in
+  the local release runbook now; this file is purely "how to publish
+  to PyPI".
+
 ## [0.4.2] — 2026-05-10
 
 ### Documentation
