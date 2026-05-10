@@ -8,7 +8,7 @@ from __future__ import annotations
 import io
 import logging
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 from docling_core.types.doc.base import BoundingBox
 from docling_core.types.doc.document import (
@@ -26,6 +26,46 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from clichefactory._engine.models.document_model import Block, Heading, Image, Page, Section, Table
     from PIL import Image as PILImage
+
+
+# ── Page markers ──────────────────────────────────────────────────────────
+# Read by ``clichefactory.chunking.PageChunker._PAGE_MARKER_PATTERNS``.
+# We emit the ``<!-- cf:page N -->`` form (vs. the legacy ``<!-- page: N -->``)
+# because the canonical pattern is listed first in PageChunker's matcher
+# and is what new code is expected to produce.
+
+PAGE_MARKER_TEMPLATE = "<!-- cf:page {n} -->"
+
+
+def emit_page_marker(page_no: int) -> str:
+    """Return the canonical ClicheFactory page marker for ``page_no``."""
+    return PAGE_MARKER_TEMPLATE.format(n=page_no)
+
+
+def assemble_paged_markdown(pages_md: dict[int, str]) -> str:
+    """Concatenate per-page markdown bodies with canonical page markers.
+
+    Each page's body is preceded by its marker (not followed by it), so
+    ``PageChunker`` assigns the correct ``page_start`` to each chunk:
+    the regex match position is the start of page ``N``, and content
+    *after* it belongs to that page.
+
+    Empty bodies are still preceded by their marker — the page exists
+    in the source document and skipping it would shift downstream page
+    numbers. Pages are emitted in ascending order regardless of dict
+    iteration order.
+
+    Returns ``""`` for an empty input dict.
+    """
+    if not pages_md:
+        return ""
+    parts: list[str] = []
+    for page_no in sorted(pages_md.keys()):
+        parts.append(emit_page_marker(page_no))
+        body = (pages_md[page_no] or "").strip()
+        if body:
+            parts.append(body)
+    return "\n\n".join(parts)
 
 
 def normalize_pil_image(pil_img: "PILImage.Image") -> "PILImage.Image":
@@ -382,6 +422,49 @@ def crop_region_to_png_bytes(
     return buf.getvalue()
 
 
+def _block_to_md(block: "Block") -> str:
+    """Markdown for one document_model ``Block``.
+
+    Module-level helper so both ``blocks_to_markdown`` (section-organised)
+    and ``pages_to_markdown`` (page-organised, with page markers) can
+    reuse the same per-block rendering.
+    """
+    from clichefactory._engine.models.document_model import Heading, Image, Paragraph, Table
+
+    if isinstance(block, Heading):
+        return "#" * max(1, block.level) + " " + (block.text or "")
+    if isinstance(block, Paragraph):
+        return block.text or ""
+    if isinstance(block, Table):
+        return _table_block_to_markdown(block)
+    if isinstance(block, Image):
+        alt = block.alt_text or "image"
+        return f"![{alt}]({block.ref})"
+    return ""
+
+
+def _table_block_to_markdown(t: "Table") -> str:
+    if not t.cells:
+        return ""
+    rows: dict[int, dict[int, str]] = {}
+    for c in t.cells:
+        if c.row not in rows:
+            rows[c.row] = {}
+        rows[c.row][c.col] = (c.text or "").replace("|", "\\|")
+    if not rows:
+        return ""
+    max_row = max(rows.keys())
+    max_col = max(max(rows[r].keys()) for r in rows)
+    lines: list[str] = []
+    for r in range(max_row + 1):
+        row_cells = rows.get(r, {})
+        line = "| " + " | ".join((row_cells.get(c, "") for c in range(max_col + 1))) + " |"
+        lines.append(line)
+        if r == 0:
+            lines.append("|" + "---|" * (max_col + 1))
+    return "\n".join(lines)
+
+
 def blocks_to_markdown(
     pages: "Sequence[Page]",
     sections: "Sequence[Section]",
@@ -389,52 +472,20 @@ def blocks_to_markdown(
     tables: "Sequence[Table]",
 ) -> str:
     """
-    Convert document_model blocks to markdown.
+    Convert document_model blocks to section-organised markdown.
 
-    Used when DoclingNormalizedDoc output_mode is "structured".
-    Serializes pages/sections/images/tables to markdown.
+    Walks the semantic ``sections`` hierarchy. Does *not* emit page
+    markers — page boundaries don't naturally align with heading
+    boundaries, and trying to interleave them produces confusing
+    output. Use ``pages_to_markdown`` instead when you need
+    ``PageChunker`` to be able to split the result.
     """
-
-    def block_to_md(block: "Block") -> str:
-        from clichefactory._engine.models.document_model import Heading, Image, Paragraph, Table
-
-        if isinstance(block, Heading):
-            return "#" * max(1, block.level) + " " + (block.text or "")
-        if isinstance(block, Paragraph):
-            return block.text or ""
-        if isinstance(block, Table):
-            return _table_block_to_markdown(block)
-        if isinstance(block, Image):
-            alt = block.alt_text or "image"
-            return f"![{alt}]({block.ref})"
-        return ""
-
-    def _table_block_to_markdown(t: "Table") -> str:
-        if not t.cells:
-            return ""
-        rows: dict[int, dict[int, str]] = {}
-        for c in t.cells:
-            if c.row not in rows:
-                rows[c.row] = {}
-            rows[c.row][c.col] = (c.text or "").replace("|", "\\|")
-        if not rows:
-            return ""
-        max_row = max(rows.keys())
-        max_col = max(max(rows[r].keys()) for r in rows)
-        lines: list[str] = []
-        for r in range(max_row + 1):
-            row_cells = rows.get(r, {})
-            line = "| " + " | ".join((row_cells.get(c, "") for c in range(max_col + 1))) + " |"
-            lines.append(line)
-            if r == 0:
-                lines.append("|" + "---|" * (max_col + 1))
-        return "\n".join(lines)
 
     def section_to_md(sec: "Section") -> list[str]:
         out: list[str] = []
         out.append("#" * max(1, sec.heading.level) + " " + (sec.heading.text or ""))
         for block in sec.blocks:
-            md = block_to_md(block)
+            md = _block_to_md(block)
             if md:
                 out.append(md)
         for sub in sec.subsections:
@@ -445,4 +496,31 @@ def blocks_to_markdown(
     for section in sections:
         parts.extend(section_to_md(section))
 
+    return "\n\n".join(parts)
+
+
+def pages_to_markdown(pages: "Sequence[Page]") -> str:
+    """Convert document_model pages to page-organised markdown with markers.
+
+    Walks ``pages`` in ascending ``index`` order, emits the canonical
+    ``<!-- cf:page N -->`` marker before each page's body, and renders
+    every block on the page in source order using ``_block_to_md``.
+
+    This is the structured-mode counterpart to ``assemble_paged_markdown``
+    (which works off pre-rendered per-page markdown from Docling).
+    Both produce output that ``PageChunker`` can split on page
+    boundaries.
+    """
+    if not pages:
+        return ""
+    parts: list[str] = []
+    for page in sorted(pages, key=lambda p: p.index):
+        parts.append(emit_page_marker(page.index))
+        body_parts: list[str] = []
+        for block in page.blocks:
+            md = _block_to_md(block)
+            if md:
+                body_parts.append(md)
+        if body_parts:
+            parts.append("\n\n".join(body_parts))
     return "\n\n".join(parts)

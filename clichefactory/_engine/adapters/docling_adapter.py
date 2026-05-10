@@ -25,8 +25,22 @@ class DoclingNormalizedDoc(NormalizedDoc):
     """
     NormalizedDoc from Docling document.
 
-    output_mode: "markdown" uses docling_document.export_to_markdown();
-    "structured" builds markdown from pages/sections/images/tables.
+    output_mode:
+        "markdown" — assembles per-page markdown from Docling's
+        ``iterate_items`` walk (via ``build_per_page_markdown``) and
+        joins it with canonical ``<!-- cf:page N -->`` markers. Falls
+        back to ``docling_document.export_to_markdown()`` only when no
+        per-page content can be recovered (e.g. some DOCX docs report
+        as a single synthetic page).
+        "structured" — walks our own ``Page``/``Block`` model and emits
+        page markers between pages via ``pages_to_markdown``.
+
+    Both modes produce output that ``clichefactory.chunking.PageChunker``
+    can split on page boundaries; before this, both went through
+    ``DoclingDocument.export_to_markdown`` / a section-walk that
+    omitted page markers, so ``PageChunker(pages_per_chunk=N)`` always
+    fell back to ``TokenChunker`` and produced a single chunk for any
+    multi-page document under the token cap.
     """
 
     def __init__(
@@ -60,11 +74,24 @@ class DoclingNormalizedDoc(NormalizedDoc):
         return self.docling_document.export_to_text()
 
     def get_markdown(self) -> str:
-        if self._output_mode == "markdown":
-            return self.docling_document.export_to_markdown()
-        from clichefactory._engine.parsers.parser_utils.pdf.docling_helpers import blocks_to_markdown
+        from clichefactory._engine.parsers.parser_utils.pdf.docling_helpers import (
+            assemble_paged_markdown,
+            build_per_page_markdown,
+            pages_to_markdown,
+        )
 
-        return blocks_to_markdown(self.pages, self.sections, self.images, self.tables)
+        if self._output_mode == "markdown":
+            pages_md = build_per_page_markdown(self.docling_document)
+            if pages_md:
+                return assemble_paged_markdown(pages_md)
+            # No item carried per-page provenance — happens for some
+            # synthetic single-page DOCX outputs. Fall back to docling's
+            # own markdown export so we still return *something* useful;
+            # PageChunker will degrade to its TokenChunker fallback in
+            # this case, which is the pre-fix behaviour.
+            return self.docling_document.export_to_markdown()
+
+        return pages_to_markdown(self.pages)
     
     # ----- Docling to document_model mapping functions -----
 

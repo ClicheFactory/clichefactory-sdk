@@ -2,6 +2,32 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [0.5.1] — 2026-05-10
+
+### Fixed
+
+- **`PageChunker` now actually splits multi-page documents.** The
+  Docling adapter's `get_markdown()` produced markdown with no page
+  markers, so `clichefactory.chunking.PageChunker` always fell back
+  to `TokenChunker` and emitted a single chunk for any multi-page
+  document under the token cap. `extract_long(..., chunker=PageChunker(
+  pages_per_chunk=N))` therefore never exercised its merge path on
+  small docs. The adapter now assembles per-page markdown via
+  `build_per_page_markdown` and joins it with the canonical
+  `<!-- cf:page N -->` markers that `PageChunker._PAGE_MARKER_PATTERNS`
+  matches first. Both the default `output_mode="markdown"` path and
+  the `output_mode="structured"` path emit markers; the structured
+  path uses a new `pages_to_markdown` helper that walks the
+  document-model `Page` sequence directly.
+
+### Added
+
+- `emit_page_marker(n)`, `assemble_paged_markdown(pages_md)`, and
+  `pages_to_markdown(pages)` helpers in
+  `clichefactory._engine.parsers.parser_utils.pdf.docling_helpers`.
+  Internal API; surfaced for parsers that build their own markdown
+  outside the Docling adapter and want PageChunker compatibility.
+
 ## [0.5.0] — 2026-05-10
 
 ### Removed
