@@ -32,6 +32,31 @@ class ServiceUnavailableError(ClicheFactoryError):
     pass
 
 
+class AlreadyInFlightError(ClicheFactoryError):
+    """Raised when an identical request is still being processed server-side.
+
+    The ClicheFactory service deduplicates requests by
+    ``(tenant_id, idempotency_key, endpoint)`` and returns HTTP 409 with a
+    ``Retry-After`` header while the original attempt is in flight. The
+    SDK polls these 409s automatically for a bounded number of attempts;
+    when polling is exhausted but the server is still working, callers
+    see this typed error instead of a generic ``ParsingError`` /
+    ``ExtractionError`` / ``UploadError``.
+
+    The retry is *safe*: the SDK derives the idempotency key
+    deterministically from the request body, so re-running the same call
+    later will either hit the server's cached response (byte-identical
+    replay) or take over once the original attempt completes.
+
+    Error codes:
+
+    - ``service.already_in_flight`` — a previous attempt with the same
+      payload is still running on the service.
+    """
+
+    pass
+
+
 class UploadError(ClicheFactoryError):
     pass
 

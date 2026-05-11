@@ -9,11 +9,12 @@ from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel
 
-from clichefactory._retry import request_with_retries
+from clichefactory._retry import is_in_flight_conflict, request_with_retries
 from clichefactory._schema import simple_schema_to_canonical
 from clichefactory._service_url import resolve_service_base_url
 
 from clichefactory.errors import (
+    AlreadyInFlightError,
     AuthenticationError,
     ErrorInfo,
     ExtractionError,
@@ -217,6 +218,26 @@ async def service_extract_via_canonical(
         raise AuthenticationError(
             ErrorInfo(code="auth.invalid_api_key", message="Invalid API key for service.")
         )
+    if is_in_flight_conflict(resp):
+        # Retry budget exhausted while an identical request was still
+        # being processed server-side. Surface a dedicated error so
+        # callers can distinguish this from a real extract failure and
+        # back off with confidence — the same payload will replay later.
+        raise AlreadyInFlightError(
+            ErrorInfo(
+                code="service.already_in_flight",
+                message=(
+                    "An identical extract request is still being processed "
+                    "by the service."
+                ),
+                hint=(
+                    f"Retry in ~{resp.headers.get('Retry-After', '?')}s with "
+                    "the same payload; the server will replay the original "
+                    "response."
+                ),
+                retryable=True,
+            )
+        )
     if resp.status_code != 200:
         raise ExtractionError(
             ErrorInfo(
@@ -324,6 +345,26 @@ async def service_to_markdown(
                 code="auth.tenant_scope",
                 message="API key is not allowed for this tenant (check tenant_id matches your key).",
                 hint=resp.text[:2000],
+            )
+        )
+    if is_in_flight_conflict(resp):
+        # Retry budget exhausted while an identical request was still
+        # being processed server-side. Surface a dedicated error so
+        # callers can distinguish this from a real parsing failure and
+        # back off with confidence — the same payload will replay later.
+        raise AlreadyInFlightError(
+            ErrorInfo(
+                code="service.already_in_flight",
+                message=(
+                    "An identical to_markdown request is still being "
+                    "processed by the service."
+                ),
+                hint=(
+                    f"Retry in ~{resp.headers.get('Retry-After', '?')}s with "
+                    "the same payload; the server will replay the original "
+                    "response."
+                ),
+                retryable=True,
             )
         )
     if resp.status_code != 200:

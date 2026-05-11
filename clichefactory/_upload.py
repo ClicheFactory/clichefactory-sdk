@@ -13,8 +13,9 @@ from typing import Any, Literal
 
 import httpx
 
-from clichefactory._retry import request_with_retries
+from clichefactory._retry import is_in_flight_conflict, request_with_retries
 from clichefactory.errors import (
+    AlreadyInFlightError,
     ErrorInfo,
     ServiceUnavailableError,
     UploadError,
@@ -109,6 +110,27 @@ async def presign(
             )
         ) from e
 
+    if is_in_flight_conflict(resp):
+        # Retry budget exhausted while an identical presign request was
+        # still being processed server-side. Presign should normally be
+        # fast, but transport hiccups can still leave one in flight on
+        # the server while we retry. Surface a dedicated error so
+        # callers can distinguish this from a real presign failure.
+        raise AlreadyInFlightError(
+            ErrorInfo(
+                code="service.already_in_flight",
+                message=(
+                    "An identical presign request is still being processed "
+                    "by the service."
+                ),
+                hint=(
+                    f"Retry in ~{resp.headers.get('Retry-After', '?')}s with "
+                    "the same payload; the server will replay the original "
+                    "response."
+                ),
+                retryable=True,
+            )
+        )
     if resp.status_code != 200:
         raise UploadError(
             ErrorInfo(

@@ -18,6 +18,7 @@ from clichefactory.types import (
     ResolutionTrace,
 )
 from clichefactory.errors import (
+    AlreadyInFlightError,
     AuthenticationError,
     ClicheFactoryError,
     ConfigurationError,
@@ -34,6 +35,7 @@ from clichefactory.errors import (
 
 __all__ = [
     "__version__",
+    "AlreadyInFlightError",
     "AuthenticationError",
     "Chunk",
     "Cliche",

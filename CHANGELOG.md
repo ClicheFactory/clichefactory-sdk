@@ -2,6 +2,42 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **In-flight 409s no longer surface as opaque `ParsingError` /
+  `ExtractionError` / `UploadError`.** The service deduplicates requests
+  by `(tenant_id, idempotency_key, endpoint)` and returns HTTP 409 with
+  a `Retry-After` header while a previous attempt is still being
+  processed. The retry layer used to bail immediately on 409 because
+  it wasn't in `RETRY_STATUS`, so re-running a script before the
+  original OCR / extract job finished (or recovering from a transport
+  hiccup that left the server still working) would fail with a generic
+  HTTP error and no guidance. The retry helper now detects the
+  "already in flight" variant of 409 — either by the `Retry-After`
+  header or a structured `{"error": "already_in_flight"}` response body
+  — and polls with a separate, more generous attempt budget
+  (`DEFAULT_IN_FLIGHT_MAX_ATTEMPTS = 6`, cap `60 s`) so it actually
+  outlasts real multi-minute jobs and replays once they complete.
+  Plain 409s without these markers (e.g. an idempotency-key
+  fingerprint mismatch) still fail fast.
+
+### Added
+
+- `clichefactory.AlreadyInFlightError` — typed error raised when
+  polling exhausts the in-flight retry budget but the server is still
+  processing an identical request. Carries
+  `code="service.already_in_flight"`, `retryable=True`, and a hint
+  with the server's last `Retry-After`. Re-running the same call later
+  is safe: the SDK derives the idempotency key from the request body,
+  so the server will replay the original response.
+- `clichefactory._retry.is_in_flight_conflict(response)` helper for
+  callsites that need to branch on this specific 409 variant.
+- Tunables on `request_with_retries`: `in_flight_max_attempts` and
+  `in_flight_retry_after_cap_s` (separate from the transient
+  `max_attempts` / `retry_after_cap_s` budget). Internal API.
+
 ## [0.5.1] — 2026-05-10
 
 ### Fixed
