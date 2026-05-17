@@ -42,7 +42,7 @@ local = [
 
 [project.urls]
 Homepage = "https://clichefactory.com"
-Repository = "https://github.com/nouveau-rubynho/clichefactory-sdk"
+Repository = "https://github.com/ClicheFactory/clichefactory-sdk"
 
 [tool.hatch.version]
 path = "clichefactory/__about__.py"
