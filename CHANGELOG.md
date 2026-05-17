@@ -2,6 +2,13 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [0.6.2] — 2026-05-18
+
+### Changed
+
+- Update package repository metadata to point at the public
+  `ClicheFactory/clichefactory-sdk` GitHub repository.
+
 ## [0.6.1] — 2026-05-14
 
 ### Fixed
