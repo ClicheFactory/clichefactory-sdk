@@ -193,11 +193,12 @@ class Client:
 
     def cliche(
         self,
-        schema: type[T] | dict[str, Any],
+        schema: type[T] | dict[str, Any] | None = None,
         *,
         name: str | None = None,
         parsing: ParsingOptions | None = None,
         artifact_id: str | None = None,
+        config_id: str | None = None,
         postprocess: PostprocessFn | None = None,
         resolvers: ResolverSpec | None = None,
     ) -> "clichefactory.cliche.Cliche[T]":
@@ -207,7 +208,10 @@ class Client:
         ----------
         schema:
             Pydantic model class (or canonical schema dict) describing the
-            fields to extract.
+            fields to extract.  Optional: omit it to extract **schemaless**
+            against a saved config (``config_id=``), in which case
+            :meth:`~clichefactory.Cliche.extract` returns the raw result
+            ``dict`` (the platform applies the config's schema).
         name:
             Optional label for the cliche (used in logging / Emio UI).
         parsing:
@@ -215,6 +219,12 @@ class Client:
         artifact_id:
             Trained pipeline artifact ID returned by Emio.  When set, the
             service uses the trained extractor instead of the generic LLM.
+        config_id:
+            Saved config ID (``cfg-...``) published from Emio.  The platform
+            resolves its schema, mode, trained artifact, and BYOK model/key
+            (service mode only).  Any inline ``schema``/``mode``/``model`` you
+            also pass takes precedence over the config's values.  Can also be
+            given per call as ``extract(config_id=...)``.
         postprocess:
             Optional callable applied to the extraction result **after** the
             built-in numeric coercion and **before** Pydantic validation.
@@ -256,6 +266,7 @@ class Client:
             name=name,
             parsing=parsing,
             artifact_id=artifact_id,
+            config_id=config_id,
             postprocess=postprocess,
             resolvers=resolvers,
         )
