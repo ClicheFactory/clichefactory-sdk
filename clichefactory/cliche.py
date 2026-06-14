@@ -76,10 +76,11 @@ class Cliche(Generic[T]):
         self,
         *,
         client: "clichefactory.client.Client",
-        schema: type[T] | dict[str, Any],
+        schema: type[T] | dict[str, Any] | None,
         name: str | None,
         parsing: ParsingOptions | None,
         artifact_id: str | None = None,
+        config_id: str | None = None,
         postprocess: PostprocessFn | None = None,
         resolvers: ResolverSpec | None = None,
     ) -> None:
@@ -88,6 +89,7 @@ class Cliche(Generic[T]):
         self._name = name
         self._parsing = parsing
         self._artifact_id = artifact_id
+        self._config_id = config_id
         self._postprocess = postprocess
         self._resolvers: ResolverSpec | None = dict(resolvers) if resolvers else None
 
@@ -107,8 +109,9 @@ class Cliche(Generic[T]):
         include_doc: bool = False,
         include_costs: bool = False,
         artifact_id: str | None = None,
+        config_id: str | None = None,
         allow_partial: bool = False,
-    ) -> Any:  # T | PartialExtraction | tuple
+    ) -> Any:  # T | PartialExtraction | dict | tuple
         resolved_model = _resolve_endpoint(
             current=model,
             legacy=llm,
@@ -121,6 +124,31 @@ class Cliche(Generic[T]):
             current_name="ocr_model",
             legacy_name="ocr_llm",
         )
+
+        effective_config_id = config_id or self._config_id
+        effective_artifact_id = artifact_id or self._artifact_id
+        schema = self._schema
+
+        # A saved config supplies the schema/mode/BYOK server-side, so a cliche
+        # may legitimately carry no inline schema. But there must be *something*
+        # to extract with, and config resolution only happens in service mode.
+        if schema is None and not effective_config_id and not effective_artifact_id:
+            raise ConfigurationError(
+                ErrorInfo(
+                    code="extract.no_schema",
+                    message="Schemaless extract needs a config_id (or artifact_id) to supply the schema.",
+                    hint="Pass client.cliche(MyModel) with a schema, or extract(config_id='cfg-...').",
+                )
+            )
+        if effective_config_id and self._client.mode != "service":
+            raise ConfigurationError(
+                ErrorInfo(
+                    code="extract.config_id_requires_service",
+                    message="config_id is resolved by the platform and requires mode='service'.",
+                    hint="Create the client with mode='service' (the default) to use config_id.",
+                )
+            )
+
         if file is None and text is None:
             raise ConfigurationError(
                 ErrorInfo(
@@ -135,12 +163,31 @@ class Cliche(Generic[T]):
                     message="Provide only one of file=... or text=..., not both.",
                 )
             )
+
+        # text= routes through the local BYOK one-shot extractor, which cannot
+        # resolve a config_id or a server-side schema. Require file= for both.
+        if text is not None and (effective_config_id or schema is None):
+            raise ConfigurationError(
+                ErrorInfo(
+                    code="extract.text_requires_schema",
+                    message="text= extraction needs an inline schema and cannot use config_id.",
+                    hint="Use file=... for config_id / schemaless extraction.",
+                )
+            )
+        if schema is None and self._client.mode != "service":
+            raise ConfigurationError(
+                ErrorInfo(
+                    code="extract.schemaless_requires_service",
+                    message="Schemaless extraction is resolved by the platform and requires mode='service'.",
+                )
+            )
+
         # Local path (A2)
         if self._client.mode == "local":
             from clichefactory._local import extract_local
 
             return await extract_local(
-                schema=self._schema,
+                schema=schema,
                 file=file,
                 text=text,
                 filename=filename,
@@ -161,7 +208,7 @@ class Cliche(Generic[T]):
             from clichefactory._local import extract_local
 
             return await extract_local(
-                schema=self._schema,
+                schema=schema,
                 file=None,
                 text=text,
                 filename=filename,
@@ -188,12 +235,15 @@ class Cliche(Generic[T]):
                 stacklevel=2,
             )
 
-        effective_artifact_id = artifact_id or self._artifact_id
         api_key = self._client.require_service_auth()
         base_url = self._client.base_url
         scope = getattr(self._client, "_scope", None)  # type: ignore[attr-defined]
 
-        if effective_artifact_id:
+        # Both artifact_id and config_id are platform-resolved by the API key's
+        # tenant, so they extract under the default scope (the server rebinds to
+        # the caller's tenant). Only inline-schema extraction carries the
+        # client/scope project + task.
+        if effective_artifact_id or effective_config_id:
             tenant_id = "default"
             project_id = "default"
             task_id = "default"
@@ -250,7 +300,7 @@ class Cliche(Generic[T]):
             api_key=api_key,
             file_uri=file_uri,
             file_name=file_name,
-            schema=self._schema,
+            schema=schema,
             mode=mode,
             llm=resolved_model or self._client._llm,  # type: ignore[attr-defined]
             ocr_llm=resolved_ocr_model or self._client._ocr_llm,  # type: ignore[attr-defined]
@@ -258,6 +308,7 @@ class Cliche(Generic[T]):
             task_id=task_id,
             tenant_id=tenant_id,
             artifact_id=effective_artifact_id,
+            config_id=effective_config_id,
             document_id=presign_document_id,
             allow_partial=allow_partial if allow_partial else None,
         )
@@ -273,7 +324,7 @@ class Cliche(Generic[T]):
         #   → Pydantic model_validate — or PartialExtraction when allow_partial + partial response
         return finalize_extract_result(
             result,
-            self._schema,
+            schema,
             self._postprocess,
             allow_partial=allow_partial,
             validation_errors=val_errs if isinstance(val_errs, list) else None,

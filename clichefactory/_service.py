@@ -122,7 +122,7 @@ async def service_extract_via_canonical(
     api_key: str,
     file_uri: str,
     file_name: str,
-    schema: type[T] | dict[str, Any],
+    schema: type[T] | dict[str, Any] | None,
     mode: str | None,
     llm: Endpoint | None,
     ocr_llm: Endpoint | None,
@@ -130,6 +130,7 @@ async def service_extract_via_canonical(
     task_id: str | None,
     tenant_id: str | None = None,
     artifact_id: str | None = None,
+    config_id: str | None = None,
     document_id: str | None = None,
     allow_partial: bool | None = None,
 ) -> dict[str, Any]:
@@ -145,7 +146,10 @@ async def service_extract_via_canonical(
             )
         )
 
-    model_schema = _schema_to_canonical(schema)
+    # Schemaless (Shape B): when no inline schema is given, send the empty
+    # freeform sentinel. A config_id (or trained artifact) supplies the real
+    # schema server-side; inline schema, when present, always wins.
+    model_schema = _schema_to_canonical(schema) if schema is not None else {}
 
     cfg = _extract_config(
         mode=mode, llm=llm, ocr_llm=ocr_llm, allow_partial=allow_partial
@@ -164,6 +168,8 @@ async def service_extract_via_canonical(
     }
     if artifact_id is not None:
         resource["artifact_id"] = artifact_id
+    if config_id is not None:
+        resource["config_id"] = config_id
     if document_id is not None:
         resource["document_id"] = document_id
 

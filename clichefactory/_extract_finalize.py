@@ -13,14 +13,19 @@ T = TypeVar("T", bound=BaseModel)
 
 def finalize_extract_result(
     result: dict[str, Any],
-    schema: type[T] | dict[str, Any],
+    schema: type[T] | dict[str, Any] | None,
     postprocess: PostprocessFn | None,
     *,
     allow_partial: bool,
     validation_errors: list[dict[str, Any]] | None = None,
     response_status: str | None = None,
-) -> T | PartialExtraction:
-    """Coerce, postprocess, then return ``PartialExtraction`` or validated model instance."""
+) -> T | PartialExtraction | dict[str, Any]:
+    """Coerce, postprocess, then return ``PartialExtraction`` or validated model instance.
+
+    When ``schema is None`` (schemaless / Shape B — the schema lives in the
+    referenced ``config_id``), there is no client-side model to validate
+    against, so the coerced result dict is returned as-is.
+    """
     result = _coerce_numeric_strings(result)
     if postprocess is not None:
         result = postprocess(result)
@@ -32,6 +37,9 @@ def finalize_extract_result(
             raw=result,
             validation_errors=list(validation_errors or []),
         )
+
+    if schema is None:
+        return result
 
     if isinstance(schema, dict):
         from clichefactory._schema import canonical_schema_to_pydantic

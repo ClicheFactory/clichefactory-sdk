@@ -102,6 +102,26 @@ result = cliche.extract(file="document.pdf")
 
 **`robust-trained`:** Requires an artifact trained with the verification pipeline (`VerifiedExtractor`). If you only trained a single-step extractor, use default extraction or `mode="trained"` instead of forcing `robust-trained`.
 
+### Saved configs (`config_id`)
+
+Save an extraction setup in [ClicheFactory](https://clichefactory.com) — schema, mode, trained artifact, and BYOK model/key — publish it for API access, and reference it by `config_id` (`cfg-...`). The platform applies the saved settings, so you don't have to repeat them in code (service mode only).
+
+```python
+from clichefactory import factory
+
+client = factory(api_key="cliche-...")
+
+# Typed: keep your Pydantic model, let the config supply mode / artifact / BYOK.
+invoice = client.cliche(Invoice).extract(file="document.pdf", config_id="cfg-8e42...")  # -> Invoice
+
+# Schemaless: omit the model and let the config provide the schema too.
+data = client.cliche().extract(file="document.pdf", config_id="cfg-8e42...")  # -> dict
+```
+
+You can also bind a config to a cliche with `client.cliche(config_id="cfg-...")`; a `config_id` passed to `extract()` overrides the bound one.
+
+**Precedence:** anything you pass inline wins over the config. If you provide both a schema (via `cliche(Model)`) and a `config_id`, your inline schema is used and the config fills the remaining gaps (mode, artifact, BYOK). Re-publish the config in ClicheFactory for edits to take effect.
+
 ## Extraction modes
 
 | Mode | Local | Service | Description |
