@@ -2,6 +2,31 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [0.7.0] — 2026-06-15
+
+Stable release of the saved-config feature first shipped in `0.7.0rc1`.
+Requires a ClicheFactory service that supports saved-config references.
+
+### Added
+
+- **Saved configs (`config_id`) in `extract()`.** Reference a config you
+  published in [ClicheFactory](https://clichefactory.com) (schema, mode,
+  trained artifact, BYOK model/key) by id — no need to repeat those settings
+  in code (service mode only).
+  - Typed: `client.cliche(Invoice).extract(file=..., config_id="cfg-...")`
+    returns an `Invoice`; the config fills whatever you didn't pass inline.
+  - Schemaless: `client.cliche().extract(file=..., config_id="cfg-...")`
+    returns the raw result `dict` (the config supplies the schema).
+  - `client.cliche(config_id="cfg-...")` binds a config to a cliche; a
+    `config_id` passed to `extract()` overrides the bound one.
+  - Precedence: inline values (schema, mode, model) always win over the
+    config; it only fills the gaps.
+
+### Changed
+
+- `client.cliche(schema=...)` is now optional — omit it for schemaless
+  config-driven extraction. Existing calls that pass a schema are unaffected.
+
 ## [0.7.0rc1] — 2026-06-14
 
 Pre-release. Install with `pip install clichefactory==0.7.0rc1`; the default
