@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from clichefactory import ValidationError, factory
 from clichefactory.errors import ErrorInfo
-from clichefactory._service import _extract_config
+from clichefactory._service import _extract_config, _parsing_to_payload
 from clichefactory.types import ParsingOptions
 
 
@@ -152,3 +152,85 @@ class TestServiceExtractWarnings:
             if "parser" in str(x.message).lower() or "ParsingOptions" in str(x.message)
         ]
         assert len(boundary_warnings) == 0
+
+
+# ---------------------------------------------------------------------------
+# Parser selection stripped from service to_markdown payload
+# ---------------------------------------------------------------------------
+
+class TestServiceToMarkdownNoParserSelection:
+    """Service to_markdown auto-routes like extraction: the parser-selection
+    fields are not sent, but the orthogonal knobs still are."""
+
+    def test_parser_selection_fields_dropped(self):
+        payload = _parsing_to_payload(
+            ParsingOptions(
+                pdf_image_parser="docling",
+                image_parser="docling",
+                pdf_fallback_to_ocr_llm=False,
+                pdf_ocr_engine="rapidocr",
+                pdf_ocr_lang="deu",
+            )
+        )
+        assert payload is not None
+        assert "pdf_image_parser" not in payload
+        assert "image_parser" not in payload
+        # Orthogonal knobs survive.
+        assert payload["pdf_fallback_to_ocr_llm"] is False
+        assert payload["pdf_ocr_engine"] == "rapidocr"
+        assert payload["pdf_ocr_lang"] == "deu"
+
+    def test_parser_only_options_collapse_to_none(self):
+        # If the caller set nothing but parser selection, nothing is sent.
+        assert _parsing_to_payload(ParsingOptions(pdf_image_parser="docling")) is None
+        assert _parsing_to_payload(ParsingOptions(image_parser="docling")) is None
+
+    def test_none_stays_none(self):
+        assert _parsing_to_payload(None) is None
+
+
+class TestServiceToMarkdownWarns:
+    """Service to_markdown warns when the caller tries to pick the parser."""
+
+    @patch("clichefactory._service.service_to_markdown", new_callable=AsyncMock)
+    @patch("clichefactory._upload.presign_and_upload_file", new_callable=AsyncMock)
+    def test_parser_selection_warns(self, mock_upload, mock_svc):
+        mock_upload.return_value = type("R", (), {
+            "file_uri": "s3://bucket/uploaded.pdf",
+            "document_id": "doc-1",
+        })()
+        mock_svc.return_value = {"markdown": "# x", "plain_text": "x", "meta": {}}
+
+        parsing = ParsingOptions(pdf_image_parser="docling")
+        client = factory(api_key="cliche-test", mode="service", parsing=parsing)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            client.to_markdown(file="/tmp/test.pdf")
+
+        parser_warnings = [
+            x for x in w if "pdf_image_parser" in str(x.message)
+        ]
+        assert len(parser_warnings) >= 1
+        assert "service mode" in str(parser_warnings[0].message).lower()
+
+    @patch("clichefactory._service.service_to_markdown", new_callable=AsyncMock)
+    @patch("clichefactory._upload.presign_and_upload_file", new_callable=AsyncMock)
+    def test_no_warning_for_orthogonal_options(self, mock_upload, mock_svc):
+        mock_upload.return_value = type("R", (), {
+            "file_uri": "s3://bucket/uploaded.pdf",
+            "document_id": "doc-1",
+        })()
+        mock_svc.return_value = {"markdown": "# x", "plain_text": "x", "meta": {}}
+
+        parsing = ParsingOptions(pdf_ocr_lang="deu")
+        client = factory(api_key="cliche-test", mode="service", parsing=parsing)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            client.to_markdown(file="/tmp/test.pdf")
+
+        parser_warnings = [
+            x for x in w if "pdf_image_parser" in str(x.message)
+        ]
+        assert len(parser_warnings) == 0

@@ -61,11 +61,14 @@ def _parsing_to_payload(opts: ParsingOptions | None) -> dict[str, Any] | None:
     if opts is None:
         return None
     d = opts.model_dump(mode="json", exclude_none=True)
+    # In service mode the platform auto-selects the parser (nice PDFs skip the
+    # LLM, scanned PDFs/images go to the platform-default OCR strategy), so the
+    # parser-selection fields are not sent — the server ignores them anyway. The
+    # orthogonal knobs (fallback, ocr_engine, lang, ...) are still forwarded.
+    d.pop("pdf_image_parser", None)
+    d.pop("image_parser", None)
     if not d:
         return None
-    # Map public name to server/internal name.
-    if d.get("pdf_image_parser") == "vision_layout":
-        d["pdf_image_parser"] = "yolo_per_partes"
     return d
 
 

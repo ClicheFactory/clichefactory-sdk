@@ -296,6 +296,21 @@ class Client:
         # Service path: POST /v1/ocr/to-markdown
         from clichefactory._service import service_to_markdown
 
+        effective_parsing = parsing or self._parsing
+        if effective_parsing is not None and (
+            effective_parsing.pdf_image_parser is not None
+            or effective_parsing.image_parser is not None
+        ):
+            warnings.warn(
+                "pdf_image_parser / image_parser are ignored in service mode: "
+                "the platform auto-selects the parser (nice PDFs skip the LLM, "
+                "scanned PDFs/images use the platform-default OCR strategy). "
+                "Other ParsingOptions (fallback, ocr_engine, lang, ...) still apply. "
+                "Use local mode to control the parser directly.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         api_key = self.require_service_auth()
         scope = self._scope
         project_id = scope.project_id or self._project or "default"

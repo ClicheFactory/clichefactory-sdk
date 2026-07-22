@@ -2,6 +2,26 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [0.8.0] — 2026-07-22
+
+### Changed
+
+- **`to_markdown()` service mode no longer accepts a parser choice.** Like
+  `extract()`, the platform now auto-selects the parsing strategy in service
+  mode: "nice" PDFs (extractable text) skip the LLM via the classifier, while
+  scanned PDFs and images use the platform-default OCR strategy. The
+  `pdf_image_parser` and `image_parser` fields of `ParsingOptions` are ignored
+  in service mode (a `UserWarning` is emitted when they are set) and are no
+  longer sent in the request. The orthogonal knobs — `pdf_fallback_to_ocr_llm`,
+  `pdf_ocr_engine`, `pdf_ocr_lang`, `use_ocr_llm_body`, `image_parser_fallback`,
+  `image_parser_lang` — are still honored. **Local mode is unchanged**: full
+  `ParsingOptions` control (including parser selection) still applies there.
+
+### Note
+
+- `to_markdown()` is billed by the ClicheFactory service (flat per page). Use a
+  service that supports to-markdown billing.
+
 ## [0.7.0] — 2026-06-15
 
 Stable release of the saved-config feature first shipped in `0.7.0rc1`.
