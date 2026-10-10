@@ -2,6 +2,25 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **Gemini 3+ requests no longer send `temperature`.** Google has deprecated
+  `temperature` / `top_p` / `top_k` for Gemini 3+ (custom values have had no
+  effect since Gemini 3.6 Flash) and upcoming models will reject them with
+  400 INVALID_ARGUMENT. `GeminiAIClient` now only sends `temperature` to
+  pre-Gemini-3 models; `Endpoint.temperature` is ignored for Gemini 3+.
+
+### Added
+
+- **`Endpoint.thinking_level`** (`"minimal" | "low" | "medium" | "high"`) —
+  sent to Gemini as `thinking_config.thinking_level` (unset = model default;
+  supported levels vary by model). Replaces `thinking_budget`, which upcoming
+  Gemini models reject. Forwarded to the service in service mode; wired to
+  `AioConfig.ocr_llm_thinking_level` / `extraction_llm_thinking_level` in local
+  mode. Ignored by non-Gemini providers.
+
 ## [0.8.0] — 2026-07-22
 
 ### Changed

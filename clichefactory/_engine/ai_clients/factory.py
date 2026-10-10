@@ -26,6 +26,7 @@ def create_ai_client(
         max_tokens = int(getattr(config, "ocr_llm_max_tokens", 10000))
         temperature = float(getattr(config, "ocr_llm_temperature", 0.1))
         num_retries = int(getattr(config, "ocr_llm_num_retries", 8))
+        thinking_level = getattr(config, "ocr_llm_thinking_level", None)
     else:
         model = (config.extraction_llm_model_name or "").strip()
         api_key = config.extraction_llm_api_key or config.ocr_llm_api_key
@@ -33,6 +34,7 @@ def create_ai_client(
         max_tokens = int(getattr(config, "extraction_llm_max_tokens", 10000))
         temperature = float(getattr(config, "extraction_llm_temperature", 0.1))
         num_retries = int(getattr(config, "extraction_llm_num_retries", 8))
+        thinking_level = getattr(config, "extraction_llm_thinking_level", None)
         if not model:
             model = config.ocr_llm_model_name.strip()
             api_key = config.ocr_llm_api_key
@@ -40,6 +42,7 @@ def create_ai_client(
             max_tokens = int(getattr(config, "ocr_llm_max_tokens", 10000))
             temperature = float(getattr(config, "ocr_llm_temperature", 0.1))
             num_retries = int(getattr(config, "ocr_llm_num_retries", 8))
+            thinking_level = getattr(config, "ocr_llm_thinking_level", None)
 
     if not (model or "").strip():
         raise ValueError(
@@ -60,6 +63,7 @@ def create_ai_client(
             max_tokens=max_tokens,
             temperature=temperature,
             max_retries=num_retries,
+            thinking_level=thinking_level,
         )
     if model.startswith("openai/"):
         from clichefactory._engine.ai_clients.openai_client import OpenAIAIClient

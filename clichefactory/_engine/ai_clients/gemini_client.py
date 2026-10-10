@@ -141,6 +141,26 @@ def _model_name_for_genai(name: str) -> str:
     return name.strip()
 
 
+# Pre-Gemini-3 families: gemini-1.x, gemini-2.x, gemini-pro, gemini-flash, gemini-exp.
+# The rolling ``gemini-{flash,flash-lite,pro}-latest`` aliases point at current models.
+_PRE_GEMINI_3_RE = re.compile(
+    r"^gemini-(?:[12](?:\.\d+)?|exp|(?:pro|flash)(?!-(?:lite-)?latest$))(?:-|$)"
+)
+
+
+def is_gemini_3_or_newer(model_name: str) -> bool:
+    """True for Gemini 3+ models, which ignore (and will soon reject) sampling params.
+
+    Google has deprecated ``temperature`` / ``top_p`` / ``top_k`` for Gemini 3+
+    and ``thinking_budget`` in favour of ``thinking_level``; upcoming models
+    return 400 INVALID_ARGUMENT when the deprecated fields are sent.
+    """
+    name = _model_name_for_genai(model_name).lower()
+    if not name.startswith("gemini-"):
+        return False
+    return _PRE_GEMINI_3_RE.match(name) is None
+
+
 def _extract_pdf_page_bytes(
     content: bytes, page_indices: list[int]
 ) -> list[tuple[int, bytes]]:
@@ -172,6 +192,7 @@ class GeminiAIClient:
         max_pages_per_request: int | None = 5,
         max_retries: int = 8,
         cost_tracker: "UsageTracker | None" = None,
+        thinking_level: str | None = None,
     ) -> None:
         self._model_name = _model_name_for_genai(model_name)
         self._full_model_name = (
@@ -183,6 +204,23 @@ class GeminiAIClient:
         self._max_pages = max_pages_per_request
         self._max_retries = max_retries
         self._cost_tracker = cost_tracker
+        self._thinking_level = (thinking_level or "").strip().lower() or None
+        self._sends_sampling_params = not is_gemini_3_or_newer(self._model_name)
+
+    def _generation_config(self, **kwargs) -> types.GenerateContentConfig:
+        """Build the per-request config.
+
+        ``temperature`` is only sent to pre-Gemini-3 models; ``thinking_level``
+        (minimal/low/medium/high) is sent when configured, otherwise the model
+        default applies. ``thinking_budget`` is never sent.
+        """
+        if self._sends_sampling_params:
+            kwargs["temperature"] = self._temperature
+        if self._thinking_level:
+            kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_level=self._thinking_level
+            )
+        return types.GenerateContentConfig(max_output_tokens=self._max_tokens, **kwargs)
 
     def set_cost_tracker(self, cost_tracker: "UsageTracker | None") -> None:
         """Set cost tracker for recording usage (per-parse)."""
@@ -225,10 +263,7 @@ class GeminiAIClient:
                 response = client.models.generate_content(
                     model=self._model_name,
                     contents=contents,
-                    config=types.GenerateContentConfig(
-                        temperature=self._temperature,
-                        max_output_tokens=self._max_tokens,
-                    ),
+                    config=self._generation_config(),
                 )
                 self._record_usage(response, phase="ocr")
                 return (response.text or "").strip()
@@ -331,11 +366,7 @@ class GeminiAIClient:
         response = client.models.generate_content(
             model=self._model_name,
             contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=self._temperature,
-                max_output_tokens=self._max_tokens,
-            ),
+            config=self._generation_config(response_mime_type="application/json"),
         )
         self._record_usage(response, phase="extraction")
         raw_text = response.text or ""
@@ -404,11 +435,9 @@ class GeminiAIClient:
             response = client.models.generate_content(
                 model=self._model_name,
                 contents=contents,
-                config=types.GenerateContentConfig(
+                config=self._generation_config(
                     response_mime_type="application/json",
                     response_schema=schema,
-                    temperature=self._temperature,
-                    max_output_tokens=self._max_tokens,
                 ),
             )
         except Exception as e:
@@ -421,11 +450,7 @@ class GeminiAIClient:
             response = client.models.generate_content(
                 model=self._model_name,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=self._temperature,
-                    max_output_tokens=self._max_tokens,
-                ),
+                config=self._generation_config(response_mime_type="application/json"),
             )
         self._record_usage(response, phase="extraction")
         raw_text = response.text or ""

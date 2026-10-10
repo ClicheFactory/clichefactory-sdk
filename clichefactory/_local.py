@@ -185,6 +185,7 @@ def build_aio_config(
     extraction_max_tokens = (llm.max_tokens if llm else None) or 10000
     extraction_temperature = (llm.temperature if llm else None) or 0.1
     extraction_num_retries = (llm.num_retries if llm else None) or 8
+    extraction_thinking_level = llm.thinking_level if llm else None
 
     # OCR: explicit override wins; otherwise inherit from extraction.
     if ocr_llm is not None:
@@ -194,6 +195,7 @@ def build_aio_config(
         ocr_max_tokens = ocr_llm.max_tokens or extraction_max_tokens
         ocr_temperature = ocr_llm.temperature if ocr_llm.temperature is not None else 1.0
         ocr_num_retries = ocr_llm.num_retries or extraction_num_retries
+        ocr_thinking_level = ocr_llm.thinking_level or extraction_thinking_level
     else:
         ocr_model = extraction_model or _default_ocr_model()
         ocr_key = extraction_key or _default_ocr_key()
@@ -201,6 +203,7 @@ def build_aio_config(
         ocr_max_tokens = extraction_max_tokens
         ocr_temperature = 1.0
         ocr_num_retries = extraction_num_retries
+        ocr_thinking_level = extraction_thinking_level
 
     _validate_local_llm_config(
         extraction_model=extraction_model,
@@ -220,12 +223,14 @@ def build_aio_config(
         ocr_llm_max_tokens=ocr_max_tokens,
         ocr_llm_temperature=ocr_temperature,
         ocr_llm_num_retries=ocr_num_retries,
+        ocr_llm_thinking_level=ocr_thinking_level,
         extraction_llm_model_name=extraction_model,
         extraction_llm_api_key=extraction_key,
         extraction_llm_api_base=extraction_api_base,
         extraction_llm_max_tokens=extraction_max_tokens,
         extraction_llm_temperature=extraction_temperature,
         extraction_llm_num_retries=extraction_num_retries,
+        extraction_llm_thinking_level=extraction_thinking_level,
         pdf_image_parser=(parsing.pdf_image_parser or "docling"),  # type: ignore[arg-type]
         pdf_fallback_to_ocr_llm=bool(True if parsing.pdf_fallback_to_ocr_llm is None else parsing.pdf_fallback_to_ocr_llm),
         pdf_structured_fallback_to_image=bool(False if parsing.pdf_structured_fallback_to_image is None else parsing.pdf_structured_fallback_to_image),

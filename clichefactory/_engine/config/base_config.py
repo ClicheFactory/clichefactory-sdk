@@ -21,6 +21,8 @@ class AioConfig:
     ocr_llm_max_tokens: int = 10000
     ocr_llm_temperature: float = 1.0
     ocr_llm_num_retries: int = 8
+    # Gemini 3+ thinking level ("minimal" | "low" | "medium" | "high"); None = model default.
+    ocr_llm_thinking_level: Optional[str] = None
 
     # --- Extraction LLM (for DSPy / data extraction) ---
     extraction_llm_model_name: str = ""
@@ -29,6 +31,7 @@ class AioConfig:
     extraction_llm_max_tokens: int = 10000
     extraction_llm_temperature: float = 1.0
     extraction_llm_num_retries: int = 8
+    extraction_llm_thinking_level: Optional[str] = None
 
     # --- PDF: image path strategy when PDF is classified as image ---
     pdf_image_parser: Literal[

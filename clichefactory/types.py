@@ -40,8 +40,16 @@ class PartialExtraction:
     validation_errors: list[dict[str, Any]]
 
 
+ThinkingLevel = Literal["minimal", "low", "medium", "high"]
+
+
 class Endpoint(BaseModel):
-    """BYOK endpoint configuration (maps to server ModelEndpointPayload)."""
+    """BYOK endpoint configuration (maps to server ModelEndpointPayload).
+
+    ``thinking_level`` applies to Gemini 3+ models (supported levels vary by
+    model; unset = model default). ``temperature`` is not sent to Gemini 3+
+    models, which ignore it and will soon reject it.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -51,6 +59,7 @@ class Endpoint(BaseModel):
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     num_retries: int | None = Field(default=None, ge=0)
     api_base: str | None = None
+    thinking_level: ThinkingLevel | None = None
 
 
 PdfImageParser = Literal["docling", "docling_vlm", "ocr_llm", "vision_layout"]

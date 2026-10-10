@@ -36,6 +36,7 @@ class ModelEndpointPayload(BaseModel):
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     num_retries: int | None = Field(default=None, ge=0)
     api_base: str | None = None
+    thinking_level: Literal["minimal", "low", "medium", "high"] | None = None
 
 
 class InferencePayload(BaseModel):
