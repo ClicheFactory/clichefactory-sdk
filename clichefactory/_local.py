@@ -195,7 +195,9 @@ def build_aio_config(
         ocr_max_tokens = ocr_llm.max_tokens or extraction_max_tokens
         ocr_temperature = ocr_llm.temperature if ocr_llm.temperature is not None else 1.0
         ocr_num_retries = ocr_llm.num_retries or extraction_num_retries
-        ocr_thinking_level = ocr_llm.thinking_level or extraction_thinking_level
+        # Not inherited from extraction (like temperature): OCR runs per page, so a
+        # high extraction thinking level would multiply thinking-token cost.
+        ocr_thinking_level = ocr_llm.thinking_level
     else:
         ocr_model = extraction_model or _default_ocr_model()
         ocr_key = extraction_key or _default_ocr_key()
@@ -203,7 +205,7 @@ def build_aio_config(
         ocr_max_tokens = extraction_max_tokens
         ocr_temperature = 1.0
         ocr_num_retries = extraction_num_retries
-        ocr_thinking_level = extraction_thinking_level
+        ocr_thinking_level = None
 
     _validate_local_llm_config(
         extraction_model=extraction_model,

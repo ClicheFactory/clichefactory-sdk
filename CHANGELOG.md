@@ -19,7 +19,8 @@ All notable changes to `clichefactory` are documented in this file.
   supported levels vary by model). Replaces `thinking_budget`, which upcoming
   Gemini models reject. Forwarded to the service in service mode; wired to
   `AioConfig.ocr_llm_thinking_level` / `extraction_llm_thinking_level` in local
-  mode. Ignored by non-Gemini providers.
+  mode. The OCR endpoint does not inherit the extraction `thinking_level`.
+  Ignored by non-Gemini providers.
 
 ## [0.8.0] — 2026-07-22
 
