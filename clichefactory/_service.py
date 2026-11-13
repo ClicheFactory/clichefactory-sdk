@@ -16,6 +16,7 @@ from clichefactory._service_url import resolve_service_base_url
 from clichefactory.errors import (
     AlreadyInFlightError,
     AuthenticationError,
+    ConfigurationError,
     ErrorInfo,
     ExtractionError,
     ParsingError,
@@ -261,6 +262,58 @@ async def service_extract_via_canonical(
             ErrorInfo(
                 code="service.invalid_response",
                 message="Service returned an unexpected response for extract.",
+                hint=str(data)[:2000],
+            )
+        )
+    return data
+
+
+async def service_balance(*, base_url: str | None, api_key: str) -> dict[str, Any]:
+    """``GET /v1/billing/balance``: the balance of the API key's account."""
+    url = resolve_service_base_url(base_url) + "/v1/billing/balance"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+
+            async def _send() -> httpx.Response:
+                return await client.get(url, headers={"X-API-KEY": api_key})
+
+            resp = await request_with_retries(_send)
+    except httpx.RequestError as e:
+        raise ServiceUnavailableError(
+            ErrorInfo(
+                code="service.unavailable",
+                message="Could not reach ClicheFactory service.",
+                hint=str(e),
+            )
+        ) from e
+
+    if resp.status_code == 401:
+        raise AuthenticationError(
+            ErrorInfo(code="auth.invalid_api_key", message="Invalid API key for service.")
+        )
+    if resp.status_code == 400:
+        # The admin key has no balance of its own.
+        raise ConfigurationError(
+            ErrorInfo(
+                code="billing.no_balance",
+                message="This API key has no balance of its own.",
+                hint=resp.text[:2000],
+            )
+        )
+    if resp.status_code != 200:
+        raise ServiceUnavailableError(
+            ErrorInfo(
+                code="service.balance_failed",
+                message=f"Could not read the balance (HTTP {resp.status_code}).",
+                hint=resp.text[:2000],
+            )
+        )
+    data = resp.json()
+    if not isinstance(data, dict) or "tenant_id" not in data:
+        raise ServiceUnavailableError(
+            ErrorInfo(
+                code="service.invalid_response",
+                message="Service returned an unexpected response for the balance.",
                 hint=str(data)[:2000],
             )
         )

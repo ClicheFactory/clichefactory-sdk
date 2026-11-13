@@ -14,6 +14,7 @@ from clichefactory.errors import (
     ValidationError,
 )
 from clichefactory.types import (
+    Balance,
     Endpoint,
     ParsingOptions,
     PostprocessFn,
@@ -396,4 +397,22 @@ class Client:
         from clichefactory._utils import run_sync
 
         return run_sync(self.to_markdown_batch_async(*args, **kwargs))
+
+    async def balance_async(self) -> Balance:
+        """The credit balance of the account this API key belongs to.
+
+        Includes the free extraction pages left and, per extraction mode and
+        for to-markdown, how many pages the balance still buys
+        (``balance.pages_remaining.extract["fast"].pages``). Service mode only.
+        """
+        from clichefactory._service import service_balance
+
+        api_key = self.require_service_auth()
+        data = await service_balance(base_url=self._base_url, api_key=api_key)
+        return Balance.model_validate(data)
+
+    def balance(self) -> Balance:
+        from clichefactory._utils import run_sync
+
+        return run_sync(self.balance_async())
 
