@@ -72,14 +72,17 @@ class TestArgParsing:
         parser = build_parser()
         args = parser.parse_args([
             "to-markdown", "doc.pdf",
-            "--markdown-mode", "service",
-            "--parser", "docling",
+            "--conversion-mode", "fast",
+            "--ocr-engine", "tesseract",
+            "--lang", "deu+eng",
             "--output", "out.md",
         ])
         assert args.command == "to-markdown"
         assert args.file == "doc.pdf"
-        assert args.markdown_mode == "service"
-        assert args.parser == "docling"
+        assert args.conversion_mode == "fast"
+        assert args.ocr_engine == "tesseract"
+        assert args.lang == "deu+eng"
+        assert args.output == "out.md"
 
     def test_to_markdown_batch_accepts_files(self):
         parser = build_parser()

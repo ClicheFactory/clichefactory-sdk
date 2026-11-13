@@ -43,7 +43,7 @@ class TestS3UriRejection:
         client = factory(api_key="cliche-test", mode="service")
 
         with pytest.raises(ValidationError) as exc_info:
-            client.to_markdown(file="s3://bucket/key/document.pdf", mode="service")
+            client.to_markdown(file="s3://bucket/key/document.pdf")
 
         assert exc_info.value.info.code == "input.s3_uri_not_allowed"
 
@@ -89,26 +89,6 @@ class TestExtractConfigNoParser:
 
 class TestServiceExtractWarnings:
     """Service-mode extract should warn when parser or ParsingOptions are provided."""
-
-    @patch("clichefactory._service.service_extract_via_canonical", new_callable=AsyncMock)
-    @patch("clichefactory._upload.presign_and_upload_file", new_callable=AsyncMock)
-    def test_parser_warns_in_service_extract(self, mock_upload, mock_svc):
-        mock_upload.return_value = type("R", (), {
-            "file_uri": "s3://bucket/uploaded.pdf",
-            "document_id": "doc-1",
-        })()
-        mock_svc.return_value = {"result": {"name": "test"}, "status": "ok"}
-
-        client = factory(api_key="cliche-test", mode="service")
-        c = client.cliche(SimpleSchema)
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            c.extract(file="/tmp/test.pdf", parser="fast")
-
-        parser_warnings = [x for x in w if "parser" in str(x.message).lower()]
-        assert len(parser_warnings) >= 1
-        assert "no effect" in str(parser_warnings[0].message).lower()
 
     @patch("clichefactory._service.service_extract_via_canonical", new_callable=AsyncMock)
     @patch("clichefactory._upload.presign_and_upload_file", new_callable=AsyncMock)

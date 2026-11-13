@@ -1,0 +1,128 @@
+# Publishes a release to PyPI when a version tag is pushed.
+#
+#   git tag -a v0.9.0 -m v0.9.0 && git push origin v0.9.0
+#
+# 1. check:   the tag matches clichefactory/__about__.py and CHANGELOG.md has
+#             an entry for it (scripts/release_check.py). A final release must
+#             be on main; a pre-release (v0.9.0rc1) may come from any branch.
+# 2. build:   run the tests, build the sdist and wheel, install the wheel in a
+#             clean venv (no [local]) and check the version it reports.
+# 3. publish: upload to PyPI with trusted publishing. GitHub proves to PyPI
+#             which repo and workflow is publishing, so no PyPI token is
+#             stored anywhere. The job runs in the `pypi` environment, whose
+#             required reviewer has to approve it in the Actions tab first.
+# 4. github-release: a GitHub release for the tag, with the changelog entry as
+#             its notes and the built files attached.
+#
+# One-time setup (repo owner): see RELEASE.md, "One-time setup".
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Never cancel a release halfway; a second tag push queues behind it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag, version and changelog agree
+        id: check
+        run: python3 scripts/release_check.py "$GITHUB_REF_NAME"
+
+      - name: A final release is on main
+        if: steps.check.outputs.prerelease == 'false'
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME is not on main. Merge first, or tag a pre-release (v...rc1) to test a branch."
+            exit 1
+          fi
+
+  build:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Test
+        run: |
+          uv sync --python 3.12 --group dev --extra local
+          uv run pytest -q
+
+      - name: Build
+        run: uv build
+
+      - name: Install the wheel in a clean venv and check its version
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          uv venv --python 3.12 /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/python -c "import clichefactory, os; v = clichefactory.__version__; assert v == os.environ['VERSION'], v; print(v)"
+          /tmp/smoke/bin/clichefactory --help > /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/clichefactory/${{ needs.check.outputs.version }}/
+    permissions:
+      id-token: write  # trusted publishing: lets PyPI verify this workflow
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.check.outputs.prerelease }}
+        run: |
+          python3 scripts/release_check.py "$GITHUB_REF_NAME" --notes-out notes.md
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag "${flags[@]}"

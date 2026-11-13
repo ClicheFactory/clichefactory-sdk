@@ -72,7 +72,6 @@ def test_local_extract_partial_on_raw_validation_error() -> None:
                 filename=None,
                 file_type=None,
                 mode=None,
-                parser=None,
                 parsing=None,
                 llm=MagicMock(),
                 ocr_llm=None,
@@ -110,13 +109,19 @@ def test_service_extract_partial_via_cliche() -> None:
     )
     c = Cliche(client=client, schema=_M, name=None, parsing=None, postprocess=None)
 
+    uploaded = MagicMock(file_uri="s3://bucket/uploads/doc.pdf", document_id="doc-1")
+
     async def _run() -> object:
         with patch(
+            "clichefactory._upload.presign_and_upload_file",
+            new_callable=AsyncMock,
+            return_value=uploaded,
+        ), patch(
             "clichefactory._service.service_extract_via_canonical",
             new_callable=AsyncMock,
             side_effect=fake_service,
         ):
-            return await c.extract_async(file="s3://bucket/doc.pdf", allow_partial=True)
+            return await c.extract_async(file="/tmp/doc.pdf", allow_partial=True)
 
     out = asyncio.run(_run())
     assert isinstance(out, PartialExtraction)

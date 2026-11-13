@@ -1,0 +1,66 @@
+# Runs the test suite on every PR and on pushes to main.
+#
+# Two jobs:
+# * pytest: the full suite with the local parsing stack ([local]), on the
+#   oldest and newest supported Python.
+# * base-install: installs the package the way most users do
+#   (`pip install clichefactory`, no [local]) and checks it imports and the
+#   CLI starts, so a top-level import of a heavy optional dependency is
+#   caught before a release.
+#
+# The release workflow (release.yml) runs the same suite again before it
+# publishes anything.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          # Libraries don't commit uv.lock (see .gitignore), so key on pyproject.
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install
+        run: uv sync --python ${{ matrix.python }} --group dev --extra local
+
+      - name: Test
+        run: uv run pytest -q
+
+  base-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install without [local]
+        run: |
+          uv venv --python 3.12 /tmp/base
+          uv pip install --python /tmp/base/bin/python .
+
+      - name: Import and start the CLI
+        run: |
+          /tmp/base/bin/python -c "import clichefactory; print(clichefactory.__version__)"
+          /tmp/base/bin/clichefactory --help > /dev/null

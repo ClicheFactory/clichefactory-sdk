@@ -1,45 +1,28 @@
 # Releasing `clichefactory`
 
-Checklist for cutting a new release of the SDK to PyPI and GitHub.
+Releases are published by GitHub Actions (`.github/workflows/release.yml`)
+when a version tag is pushed. Nothing is uploaded from a laptop, and no PyPI
+token is stored anywhere: PyPI trusts this repo's release workflow directly
+(trusted publishing), and the publish step waits for the owner's approval.
+
 Versioning is SemVer (pre-1.0: minor for additive API, patch for bugfix/docs).
-
-The single source of truth for the version is `clichefactory/__about__.py`.
-`pyproject.toml` reads it dynamically via `[tool.hatch.version]`.
-
----
-
-## Prerequisites (one-time setup)
-
-- `uv` installed (`brew install uv`)
-- PyPI account with API token scoped to the `clichefactory` project:
-  https://pypi.org/manage/account/token/
-- Token saved as `UV_PUBLISH_TOKEN` in your shell environment, e.g. in
-  `~/.zshrc`:
-  ```bash
-  export UV_PUBLISH_TOKEN=pypi-AgEI...
-  ```
+The single source of truth for the version is `clichefactory/__about__.py`;
+`pyproject.toml` reads it via `[tool.hatch.version]`.
 
 ---
 
 ## Release checklist
 
-Copy this block into your scratchpad and tick off as you go:
-
 ```
-- [ ] 1. Pick the new version (X.Y.Z)
-- [ ] 2. Bump clichefactory/__about__.py
-- [ ] 3. Update CHANGELOG.md
-- [ ] 4. Decide on README.md / other unstaged changes
-- [ ] 5. uv build (after wiping dist/)
-- [ ] 6. Smoke-test the wheel locally
-- [ ] 7. uv publish
-- [ ] 8. Commit, tag, push (main + tag)
-- [ ] 9. Optional: GitHub release in the UI
+- [ ] 1. PR: bump clichefactory/__about__.py + add the CHANGELOG.md entry
+- [ ] 2. Merge it (tests must be green)
+- [ ] 3. Tag main and push the tag
+- [ ] 4. Approve the publish job in the Actions tab
+- [ ] 5. Check PyPI and the GitHub release
+- [ ] 6. Bump the downstream pins
 ```
 
----
-
-### 1. Pick the new version
+### 1. Version bump and changelog (in a PR)
 
 | Bump  | When                                                  |
 | ----- | ----------------------------------------------------- |
@@ -47,138 +30,135 @@ Copy this block into your scratchpad and tick off as you go:
 | minor | Additive public API (new functions, new params)       |
 | major | Breaking change (post-1.0 only; pre-1.0 use minor)    |
 
-### 2. Bump `clichefactory/__about__.py`
-
 ```python
+# clichefactory/__about__.py
 __version__ = "X.Y.Z"
 ```
 
-This is the only place to change it.
-
-### 3. Update `CHANGELOG.md`
-
-Add a new entry at the top following the existing format
-(Keep a Changelog style):
+Add an entry at the top of `CHANGELOG.md` (Keep a Changelog style). The
+release notes on GitHub are this entry, so the heading must be exactly:
 
 ```markdown
 ## [X.Y.Z] — YYYY-MM-DD
-
-### Added / Changed / Fixed / Removed
-
-- Concise bullet describing the change.
 ```
 
-### 4. Decide on `README.md` / other unstaged changes
-
-Run `git status` in `clichefactory-sdk/`. If unrelated edits are
-sitting there, either:
-
-- include them in this release if they're complete, or
-- `git checkout -- <file>` to revert them.
-
-Do not ship a half-finished README.
-
-### 5. `uv build` (after wiping `dist/`)
+Check it before pushing (standard library only, no install needed):
 
 ```bash
-cd ~/ClicheFactory/clichefactory-sdk
-rm -rf dist/
-uv build
-ls dist/
+python scripts/release_check.py vX.Y.Z
 ```
 
-Expect:
-- `clichefactory-X.Y.Z-py3-none-any.whl`
-- `clichefactory-X.Y.Z.tar.gz`
+### 2. Merge
 
-Wiping `dist/` first prevents `uv publish` from re-uploading old
-versions and getting a confusing 400 from PyPI.
+`tests.yml` runs on the PR: the full suite on Python 3.12 and 3.13, plus a
+plain `pip install clichefactory` (no `[local]`) that must import and start the
+CLI.
 
-### 6. Smoke-test the wheel locally
-
-```bash
-uv venv /tmp/cliche-test
-source /tmp/cliche-test/bin/activate
-uv pip install dist/clichefactory-X.Y.Z-py3-none-any.whl
-python -c "import clichefactory; print(clichefactory.__version__)"
-deactivate
-rm -rf /tmp/cliche-test
-```
-
-If the version doesn't match, stop and figure out why before publishing.
-
-### 7. `uv publish`
+### 3. Tag and push
 
 ```bash
-uv publish
-```
-
-Reads `UV_PUBLISH_TOKEN` from the environment. Or pass `--token` inline:
-
-```bash
-uv publish --token pypi-AgEI...
-```
-
-Confirm on https://pypi.org/project/clichefactory/ that the new version
-shows up.
-
-### 8. Commit, tag, push
-
-```bash
-cd ~/ClicheFactory/clichefactory-sdk
-
-git add clichefactory/__about__.py CHANGELOG.md \
-        clichefactory/_engine/...   # whichever files changed
-# (also git add README.md if you're keeping those changes)
-
-git commit -m "<type>: <summary>
-
-Bumps version to X.Y.Z.
-
-<bullet list of changes>"
-
-git tag -a vX.Y.Z -m "vX.Y.Z"
-git push origin main
+git checkout main && git pull
+git tag -a vX.Y.Z -m vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-### 9. Optional: GitHub release in the UI
+The release workflow then:
 
-Only useful if you want pretty release notes / downloadable artifacts.
-PyPI is the source of truth for `pip install`.
+1. checks the tag matches `__about__.py`, the changelog has the entry, and the
+   commit is on `main`;
+2. runs the tests, builds the sdist and wheel, installs the wheel in a clean
+   venv and checks the version it reports;
+3. **waits for approval**, then publishes to PyPI;
+4. creates the GitHub release with the changelog entry and the built files.
 
-1. https://github.com/ClicheFactory/clichefactory-sdk/releases
-2. **Draft a new release**
-3. Choose the existing tag `vX.Y.Z`, target `main`
-4. Title: `vX.Y.Z`
-5. Description: paste the relevant CHANGELOG entry
-6. Optionally drag in `dist/clichefactory-X.Y.Z-py3-none-any.whl` and
-   `clichefactory-X.Y.Z.tar.gz`
-7. Keep "Set as the latest release" checked, **Publish release**
+If step 1 or 2 fails, nothing is published. Fix it, delete the tag
+(`git push --delete origin vX.Y.Z && git tag -d vX.Y.Z`), and tag again.
+
+### 4. Approve
+
+Actions tab → the `release` run → **Review deployments** → `pypi` → Approve.
+GitHub also emails the reviewer.
+
+### 5. Check
+
+- https://pypi.org/project/clichefactory/ shows the new version.
+- https://github.com/ClicheFactory/clichefactory-sdk/releases has the release.
+
+### 6. Downstream pins
+
+The SDK is pinned in other repos; bump them in their own PRs:
+
+| Repo | Where | How |
+| --- | --- | --- |
+| FactoryServer (aio-server) | `pyproject.toml` floor + `uv.lock` | `uv lock --upgrade-package clichefactory`, then `grep -A2 'name = "clichefactory"' uv.lock` to confirm |
+| ClicheFactory (Emio) | `requirements.txt` | `clichefactory[local]==X.Y.Z` |
+| clichefactory-mcp | `pyproject.toml` floor | only if MCP needs the new version; see its RELEASE.md |
+| clichefactory-test-suite | `pyproject.toml` | `clichefactory[local]==X.Y.Z` |
+
+---
+
+## Release candidates (testing on dev first)
+
+A pre-release version (`X.Y.ZrcN`, also `aN` / `bN`) goes through the same
+workflow and is published to PyPI as a pre-release. `pip install clichefactory`
+ignores pre-releases, so customers don't get it; you have to ask for it by
+version.
+
+1. Set `__version__ = "0.9.0rc1"` and add a `## [0.9.0rc1] — date` entry.
+2. Tag `v0.9.0rc1` and push. A pre-release may be tagged from a branch, so a
+   change can be tried before it is merged.
+3. Approve as usual. The GitHub release is marked as a pre-release.
+4. Pin `clichefactory[local]==0.9.0rc1` on aio-server's `dev` and in the test
+   suite, deploy dev, test.
+5. When it's good: `__version__ = "0.9.0"`, a `## [0.9.0]` entry, merge, tag.
+
+---
+
+## One-time setup (repo owner)
+
+Done once; after that a release needs no credentials at all.
+
+1. **PyPI → trusted publisher.** On https://pypi.org/manage/project/clichefactory/settings/publishing/,
+   add a GitHub publisher:
+   - Owner: `ClicheFactory`
+   - Repository: `clichefactory-sdk`
+   - Workflow name: `release.yml`
+   - Environment name: `pypi`
+2. **GitHub → environment.** Repo Settings → Environments → New environment
+   `pypi`:
+   - Required reviewers: yourself.
+   - Deployment branches and tags: "Selected branches and tags", add the tag
+     rule `v*`.
+3. **After the first release works,** revoke the old PyPI API token
+   (https://pypi.org/manage/account/token/) and remove `UV_PUBLISH_TOKEN`
+   from `~/.zshrc`.
 
 ---
 
 ## Troubleshooting
 
-### `uv publish` fails with 400 / "File already exists"
+### "File already exists" from PyPI
 
-PyPI does not allow re-uploading a version. You either:
-- forgot to bump `__about__.py`, or
-- left old artifacts in `dist/` from a previous release.
+PyPI never accepts the same version twice, even after a delete. Bump to the
+next patch (or the next `rcN`) and release that. Never try to fix a published
+version in place.
 
-Fix: bump to the next patch (e.g. `X.Y.(Z+1)`), wipe `dist/`, rebuild,
-republish. **Never** try to "fix" a published version in place — cut a
-new patch instead.
+### The check job fails
 
-### Downstream consumers still pull the old version after bumping
+The message says which of the three it is: the tag doesn't match
+`__about__.py`, the changelog entry is missing (the heading must be
+`## [X.Y.Z] — date`), or a final release was tagged off `main`.
 
-If a downstream service pins the SDK and isn't picking up the new
-version, run `uv lock --upgrade-package clichefactory` in that
-consumer's repo. Without `--upgrade-package`, `uv lock` will keep the
-existing pinned version even if the floor moved. After running it,
-`grep` the lock file to confirm the new version is actually pinned.
+### The publish job fails with an OIDC / trusted publishing error
 
-### Token leaked into shell history
+The PyPI publisher settings must match exactly: owner, repo,
+`release.yml`, and environment `pypi`. Fix them on PyPI and re-run the
+failed job from the Actions tab; the tag doesn't need to change.
 
-Revoke it on PyPI immediately and generate a new one. Prefer
-`UV_PUBLISH_TOKEN` in `~/.zshrc` over inline `--token` for this reason.
+### Publishing by hand (emergency only)
+
+If Actions is unavailable: create a PyPI token scoped to `clichefactory` for
+this one release, `rm -rf dist && uv build && uv publish --token ...`, then
+revoke the token. Push the tag afterwards so the GitHub release exists too
+(the workflow will fail at publish because the version exists; create the
+GitHub release by hand from the changelog entry).
