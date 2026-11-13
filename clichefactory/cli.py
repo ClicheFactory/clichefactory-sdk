@@ -234,6 +234,59 @@ def _mask(s: str) -> str:
     return s[:4] + "..." + s[-4:]
 
 
+def _format_cost(cost: Any) -> str:
+    pages = f"{cost.pages} page{'s' if cost.pages != 1 else ''}"
+    credits = f"{cost.credits_used} credit{'s' if cost.credits_used != 1 else ''}"
+    rate = f" ({cost.credits_per_page}/page)" if cost.credits_per_page else ""
+    return f"Cost: {pages}, {credits}{rate}"
+
+
+def _pages_text(rate: Any) -> str:
+    return "unlimited" if rate.pages is None else f"{rate.pages:,}"
+
+
+def _format_balance(bal: Any) -> str:
+    currency = f" ({bal.currency})" if bal.currency else ""
+    lines = [f"Balance: {bal.balance_credits:,} credits{currency}"]
+    if bal.free_extraction_pages_remaining:
+        lines.append(f"Free extraction pages left: {bal.free_extraction_pages_remaining:,}")
+    pr = bal.pages_remaining
+    if pr is not None:
+        def per_mode(rates: dict[str, Any]) -> str:
+            return ", ".join(f"{mode} {_pages_text(r)}" for mode, r in rates.items())
+
+        lines.append("Pages left at current rates:")
+        if pr.extract:
+            lines.append(f"  extract         {per_mode(pr.extract)}")
+        if pr.extract_byok:
+            lines.append(f"  extract (BYOK)  {per_mode(pr.extract_byok)}")
+        if pr.to_markdown is not None:
+            lines.append(f"  to-markdown     {_pages_text(pr.to_markdown)}")
+    return "\n".join(lines)
+
+
+def cmd_balance(args: argparse.Namespace) -> None:
+    """Show the credit balance of the API key's account."""
+    from clichefactory.errors import ClicheFactoryError
+
+    cfg = load_config()
+    args.client_mode = "service"  # the balance lives on the service, whatever the default mode
+    try:
+        client = _build_client(args, cfg)
+        balance = client.balance()
+    except ClicheFactoryError as e:
+        _error(str(e), hint=getattr(e.info, "hint", None))
+        return
+    except KeyboardInterrupt:
+        print("\nAborted.", file=sys.stderr)
+        sys.exit(130)
+
+    if args.json:
+        _write_output(balance.model_dump(mode="json"), None)
+    else:
+        print(_format_balance(balance))
+
+
 def cmd_extract(args: argparse.Namespace) -> None:
     """Extract structured data from a single document."""
     from clichefactory.errors import ClicheFactoryError
@@ -252,7 +305,11 @@ def cmd_extract(args: argparse.Namespace) -> None:
         cliche = client.cliche(schema, artifact_id=artifact_id)
 
         extraction_mode = getattr(args, "extraction_mode", None)
-        result = cliche.extract(file=file_path, mode=extraction_mode)
+        if getattr(args, "show_cost", False):
+            result, cost = cliche.extract(file=file_path, mode=extraction_mode, return_cost=True)
+            print(_format_cost(cost), file=sys.stderr)
+        else:
+            result = cliche.extract(file=file_path, mode=extraction_mode)
 
         if hasattr(result, "model_dump"):
             data = result.model_dump(mode="json")
@@ -561,6 +618,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Trained artifact ID (from Emio)",
     )
     p_extract.add_argument("-o", "--output", help="Output file path (default: stdout)")
+    p_extract.add_argument(
+        "--show-cost", dest="show_cost", action="store_true",
+        help="Print the pages and credits this extraction cost to stderr. Service mode only.",
+    )
     _add_connection_args(p_extract)
     _add_parsing_args(p_extract)
 
@@ -621,6 +682,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_connection_args(p_md_batch)
     _add_parsing_args(p_md_batch)
 
+    # --- balance ---
+    p_balance = subparsers.add_parser(
+        "balance", help="Show your credit balance and how many pages it buys",
+    )
+    p_balance.add_argument("--json", action="store_true", help="Print the full balance as JSON")
+    p_balance.add_argument("--api-key", dest="api_key", help="ClicheFactory service API key")
+    p_balance.add_argument("--base-url", dest="base_url", help="Service base URL")
+
     # --- doctor ---
     subparsers.add_parser("doctor", help="Check dependencies and configuration")
 
@@ -645,6 +714,7 @@ def main(argv: list[str] | None = None) -> None:
         "extract-batch": cmd_extract_batch,
         "to-markdown": cmd_to_markdown,
         "to-markdown-batch": cmd_to_markdown_batch,
+        "balance": cmd_balance,
         "doctor": cmd_doctor,
     }
 

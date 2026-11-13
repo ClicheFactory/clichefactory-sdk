@@ -86,6 +86,53 @@ class CostInfo(BaseModel):
     breakdown: dict[str, Any] | None = None
 
 
+class ExtractionCost(BaseModel):
+    """What one service-mode extraction cost.
+
+    Returned with the result by ``extract(..., return_cost=True)``.
+    ``credits_used`` is 0 when free pages covered the call.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    credits_used: int = 0
+    pages: int = 0
+    credits_per_page: int | None = None
+
+
+class PagesAtRate(BaseModel):
+    """What the balance buys at one per-page rate."""
+
+    model_config = ConfigDict(extra="allow")
+
+    credits_per_page: int
+    pages: int | None = None  # None when the rate is 0 credits per page
+
+
+class PagesRemaining(BaseModel):
+    """The balance as pages: per extraction mode (fast, balanced, robust), and for to-markdown."""
+
+    model_config = ConfigDict(extra="allow")
+
+    extract: dict[str, PagesAtRate] = Field(default_factory=dict)
+    extract_byok: dict[str, PagesAtRate] = Field(default_factory=dict)
+    to_markdown: PagesAtRate | None = None
+    to_markdown_byok: PagesAtRate | None = None
+
+
+class Balance(BaseModel):
+    """The credit balance of the account the API key belongs to (``client.balance()``)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    tenant_id: str
+    balance_credits: int = 0
+    currency: str | None = None
+    free_extraction_pages_remaining: int = 0
+    low_balance_threshold_credits: int = 0
+    pages_remaining: PagesRemaining | None = None
+
+
 class ExtractMeta(BaseModel):
     model_config = ConfigDict(extra="allow")
 

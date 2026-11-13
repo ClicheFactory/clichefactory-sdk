@@ -1,12 +1,121 @@
 # ---- Utility helpers for eml parsing
+from dataclasses import dataclass
 from email.message import Message
+from pathlib import Path
 import re
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, Iterator, List, Optional
 
 import logging
 from clichefactory._engine.models.normalized_doc import NormalizedDoc
 
 logger = logging.getLogger(__name__)
+
+
+# ---- Which parts of an email are documents
+
+# Inline images below this size that carry a Content-ID are logos and icons the
+# HTML body references (``cid:image001.png``), mostly in signatures. A reply
+# chain can carry a dozen. They are not documents: not parsed, and not billed by
+# the ClicheFactory service. A screenshot pasted into the body is inline with a
+# Content-ID too, but much larger, so it is still read.
+INLINE_IMAGE_MAX_BYTES = 20 * 1024
+
+_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"})
+_DOCUMENT_DISPOSITIONS = (None, "inline", "attachment")
+
+
+@dataclass(frozen=True)
+class DocumentPart:
+    """One document found in an email: a file attachment or a forwarded email."""
+
+    filename: str
+    extension: str  # lowercase, with the dot: ".pdf", ".eml"
+    content: bytes
+
+
+def walk_own_parts(msg: Message) -> Iterator[Message]:
+    """Like ``msg.walk()``, but without walking into forwarded emails.
+
+    A forwarded email (``message/rfc822``) is yielded as one part; its body and
+    attachments belong to it and are read when it is parsed as an email.
+    """
+    yield msg
+    if msg.get_content_type() == "message/rfc822":
+        return
+    if msg.is_multipart():
+        for sub in msg.get_payload():
+            yield from walk_own_parts(sub)
+
+
+def iter_document_parts(msg: Message, extensions: Iterable[str]) -> Iterator[DocumentPart]:
+    """Each part of ``msg`` that is a document, exactly once.
+
+    This is the one rule for which parts of an email are read. ``EmlParser``
+    parses these parts, and the ClicheFactory service bills exactly these (1
+    page for the email, plus each of these by its own page rule), so keep both
+    on this function.
+
+    A part is a document when it:
+
+    * has a filename whose extension is in ``extensions`` (the registered
+      parsers),
+    * has a disposition of none, ``inline`` or ``attachment``,
+    * isn't empty, and
+    * isn't a small inline image with a Content-ID (a signature logo).
+
+    A forwarded email (``message/rfc822``) is one ``.eml`` document, filename
+    or not, and isn't walked into: parsing it as an email reads its body and
+    attachments, so nothing inside it is read twice.
+
+    A part that can't be decoded is skipped with a warning.
+    """
+    exts = frozenset(e.lower() for e in extensions)
+    for part in walk_own_parts(msg):
+        try:
+            doc = _document_part(part, exts)
+        except Exception as exc:  # malformed headers or payload
+            logger.warning("Skipping unreadable email part: %s", exc)
+            continue
+        if doc is not None:
+            yield doc
+
+
+def _document_part(part: Message, exts: frozenset[str]) -> Optional[DocumentPart]:
+    forwarded = part.get_content_type() == "message/rfc822"
+    if part.is_multipart() and not forwarded:
+        return None
+    if part.get_content_disposition() not in _DOCUMENT_DISPOSITIONS:
+        return None
+
+    if forwarded:
+        if ".eml" not in exts:
+            return None
+        payload = part.get_payload()
+        inner = payload[0] if isinstance(payload, list) and payload else None
+        if inner is None:
+            return None
+        filename = part.get_filename() or "forwarded.eml"
+        if Path(filename).suffix.lower() != ".eml":
+            filename += ".eml"
+        return DocumentPart(filename, ".eml", inner.as_bytes())
+
+    filename = part.get_filename()
+    if not filename:
+        return None
+    ext = Path(filename).suffix.lower()
+    if ext not in exts:
+        return None
+    content = part.get_payload(decode=True)
+    if not content:
+        logger.warning("Empty attachment content for %s", filename)
+        return None
+    if (
+        ext in _IMAGE_EXTENSIONS
+        and part.get("Content-ID")
+        and len(content) < INLINE_IMAGE_MAX_BYTES
+    ):
+        return None
+    return DocumentPart(filename, ext, content)
 
 def normalize_newlines(text: str) -> str:
     """RFC 5322–compliant email messages must use CRLF (\r\n) as line endings.
@@ -143,7 +252,9 @@ def extract_body(msg: Message) -> Dict[str, Optional[str]]:
     text_html = None
 
     if msg.is_multipart():
-        for part in msg.walk():
+        # A forwarded email's body is its own; it is read when the forwarded
+        # email is parsed as an attachment (see iter_document_parts).
+        for part in walk_own_parts(msg):
             content_type = part.get_content_type()
             disposition = part.get_content_disposition()
             if disposition == "attachment":

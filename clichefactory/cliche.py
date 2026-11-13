@@ -15,6 +15,7 @@ from clichefactory.errors import (
 )
 from clichefactory.types import (
     Endpoint,
+    ExtractionCost,
     ParsingOptions,
     PostprocessFn,
     Resolver,
@@ -71,6 +72,15 @@ def _resolve_endpoint(
     return None
 
 
+def _extraction_cost(resp: dict[str, Any]) -> ExtractionCost:
+    """The cost fields of a /v1/canonical response (internal USD figures are left out)."""
+    return ExtractionCost(
+        credits_used=int(resp.get("credits_used") or 0),
+        pages=int(resp.get("pages") or 0),
+        credits_per_page=resp.get("credits_per_page"),
+    )
+
+
 class Cliche(Generic[T]):
     def __init__(
         self,
@@ -111,6 +121,7 @@ class Cliche(Generic[T]):
         artifact_id: str | None = None,
         config_id: str | None = None,
         allow_partial: bool = False,
+        return_cost: bool = False,
     ) -> Any:  # T | PartialExtraction | dict | tuple
         resolved_model = _resolve_endpoint(
             current=model,
@@ -179,6 +190,18 @@ class Cliche(Generic[T]):
                 ErrorInfo(
                     code="extract.schemaless_requires_service",
                     message="Schemaless extraction is resolved by the platform and requires mode='service'.",
+                )
+            )
+        if return_cost and (self._client.mode != "service" or text is not None):
+            raise ConfigurationError(
+                ErrorInfo(
+                    code="extract.cost_requires_service",
+                    message=(
+                        "return_cost=True needs a service-mode extraction of a file. "
+                        "Local and text= extractions run on your own model key, so the "
+                        "platform bills nothing for them."
+                    ),
+                    hint="Use mode='service' with file=..., or drop return_cost.",
                 )
             )
 
@@ -322,7 +345,7 @@ class Cliche(Generic[T]):
         #   → system coerce  (EU decimals, % suffix, currency, accounting negatives)
         #   → user postprocess  (if provided via cliche(postprocess=...))
         #   → Pydantic model_validate — or PartialExtraction when allow_partial + partial response
-        return finalize_extract_result(
+        out = finalize_extract_result(
             result,
             schema,
             self._postprocess,
@@ -330,6 +353,9 @@ class Cliche(Generic[T]):
             validation_errors=val_errs if isinstance(val_errs, list) else None,
             response_status=svc_status if isinstance(svc_status, str) else None,
         )
+        if return_cost:
+            return out, _extraction_cost(resp)
+        return out
 
     def extract(self, **kwargs: Any) -> Any:
         return run_sync(self.extract_async(**kwargs))

@@ -338,25 +338,51 @@ detailed.warnings       # tuple[str, ...]
 
 This is also the shape Emio needs if you ever build a long-doc review UI.
 
-## SaaS pricing (service mode)
+## Pricing, balance and cost (service mode)
 
-Billing applies only when using **`mode="service"`** with a ClicheFactory API key. Local runs are not metered by the platform.
+Only `mode="service"` is billed; local runs never are. Extraction and
+to-markdown are billed in credits per page, at a rate that depends on the
+extraction mode and on whether you bring your own model key (BYOK). New
+accounts get free extraction pages, which are used before any credits.
 
-**Free tier**
+Current rates, and what counts as a page for each file type (for example, an
+email is 1 page plus its attachments):
+[clichefactory.com/developer/pricing](https://clichefactory.com/developer/pricing/).
 
-- **10** lifetime extraction pages (metered per processed page). Those pages are free regardless of full-service vs BYOK.
+### Balance
 
-**Paid usage** (credit balance)
+```python
+client = factory(api_key="...")
 
-- After free extraction pages are exhausted, extraction is billed per page from your balance.
-- **Full-service** means the platform runs the LLMs. **BYOK** (bring your own key) applies when you supply your own LLM API key on the client (for example via `Endpoint(..., api_key=...)` or envelope config as implemented in the SDK).
+bal = client.balance()
+bal.balance_credits                        # 1240
+bal.free_extraction_pages_remaining        # 0
+bal.pages_remaining.extract["fast"].pages  # pages the balance still buys in fast mode
+```
 
-Default rates (USD; the API may override these per deployment via stored rate rows):
+`pages_remaining` has `extract` and `extract_byok` (per mode: `"fast"`,
+`"balanced"`, `"robust"`), plus `to_markdown` and `to_markdown_byok`. Each entry
+has `credits_per_page` and `pages`. Use it to check you can afford a batch
+before you start it.
 
-| Operation | Full-service | BYOK |
-|-----------|--------------|------|
-| Extraction (per page) | $0.005 | $0.0005 |
-| Training (per run) | — (BYOK only during MVP) | flat fee — see [ClicheFactory](https://clichefactory.com) |
+### Cost of one extraction
+
+```python
+invoice, cost = client.cliche(Invoice).extract(file="invoice.pdf", return_cost=True)
+cost.pages, cost.credits_used, cost.credits_per_page  # (2, 20, 10)
+```
+
+`credits_used` is 0 when free pages covered the call. `return_cost=True` also
+works in `extract_batch`, where each item becomes a `(result, cost)` pair. It
+needs service mode and `file=`; local and `text=` extractions raise, because
+the platform bills nothing for them.
+
+### CLI
+
+```bash
+clichefactory balance          # readable summary; --json for the full response
+clichefactory extract invoice.pdf --schema schema.json --show-cost   # cost on stderr
+```
 
 ## Configuration
 
@@ -600,5 +626,5 @@ On Linux/Windows or restricted environments, setting `DOCLING_OCR_FONT_PATH` is 
 | `.doc`, `.odt` | DocParser|
 | `.xlsx` | XlsxParser |
 | `.csv` | CsvParser | Auto-detect delimiter and header |
-| `.eml` | EmlParser | RFC 2822 with recursive attachment parsing |
+| `.eml` | EmlParser | Body plus each attachment, parsed once; forwarded emails parsed as emails; small inline signature images skipped |
 | `.txt`, `.md` | TextParser | Passthrough with encoding detection |

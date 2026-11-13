@@ -2,7 +2,6 @@ from email import policy
 from email.parser import BytesParser
 from email.message import Message
 
-from pathlib import Path
 from typing import List
 import logging
 
@@ -14,7 +13,12 @@ from clichefactory._engine.parsers.docx_parser import DocxParser
 from clichefactory._engine.parsers.parser_utils.pdf.strategies import DoclingBaselineStrategy
 from clichefactory._engine.parsers.media_parser_registry import MediaParserRegistry
 from clichefactory._engine.parsers.media_parser import MediaParser
-from clichefactory._engine.parsers.parser_utils.eml_utils import extract_body, build_markdown, build_plain_text
+from clichefactory._engine.parsers.parser_utils.eml_utils import (
+    build_markdown,
+    build_plain_text,
+    extract_body,
+    iter_document_parts,
+)
 from clichefactory._engine.parsers.parser_utils.media_router import MediaRouter
 from clichefactory._engine.parsers.xlsx_parser import XlsxParser
 from clichefactory._engine.parsers.csv_parser import CsvParser
@@ -41,41 +45,17 @@ class EmlParser(MediaParser):
             self.router = MediaRouter(parser_registry, cacher)
     
     def _parse_attachments(self, msg: Message) -> list[NormalizedDoc]:
+        """Parse each document in the email once (see ``iter_document_parts``)."""
         docs = []
-
-        for part in msg.walk():
-            content_type = part.get_content_type()
-            maintype = part.get_content_maintype()
-            disposition = part.get_content_disposition()
-            filename = part.get_filename()
-            content_id = part.get("Content-ID")
-
-            file_ext = None
-
-            # Only capture proper attachments or inline parts
-            if disposition not in (None, "inline", "attachment"):
+        extensions = self.router.registry.get_registered_extensions()
+        for part in iter_document_parts(msg, extensions):
+            try:
+                doc = self.router.parse(part.content, part.filename)
+            except Exception as e:
+                logger.exception("Attachment parse failed for %s: %s", part.filename, e)
                 continue
-            
-            # Process the attachment
-            if filename:
-                file_ext = Path(filename).suffix.lower()
-
-                # TODO: Think about adding real MIME type checkings, many things are ready in the codebase  
-                if file_ext in self.router.registry.get_registered_extensions():
-                    # Get bytes
-                    try:
-                        content: bytes = part.get_payload(decode=True)   # type: ignore
-                    except Exception as e:
-                        logger.warning(f"Failed to decode attachment {filename} ({content_type}): {e}")
-                        continue
-
-                    if not content:
-                        logger.warning(f"Empty attachment content for {filename} ({content_type})")
-                        continue
-                    try:
-                        docs.append(self.router.parse(content, filename))
-                    except Exception as e:
-                        logger.exception("Attachment parse failed: %s", e)
+            if doc is not None:
+                docs.append(doc)
         return docs
 
     def document_parse(self, content: bytes, filename: str) -> NormalizedDoc:
