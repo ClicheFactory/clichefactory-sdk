@@ -2,6 +2,45 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [0.9.0] — 2026-11-14
+
+Same code as 0.9.0rc1, which was tested on the ClicheFactory dev environment.
+
+### Added
+
+- **Balance:** `client.balance()` / `balance_async()` return the credit balance
+  of the API key's account (`GET /v1/billing/balance`): credits, free
+  extraction pages left, and how many pages the balance still buys per
+  extraction mode and for to-markdown. Service mode only.
+- **Cost of an extraction:** `extract(..., return_cost=True)` returns
+  `(result, ExtractionCost)` with `pages`, `credits_used` and
+  `credits_per_page`. Without the flag, `extract()` returns what it always
+  did. Service mode with `file=` only; local and `text=` extractions raise.
+- **CLI:** `clichefactory balance` (`--json` for the full response), and
+  `clichefactory extract --show-cost`, which prints the cost to stderr and
+  leaves the JSON on stdout unchanged.
+- New public types: `Balance`, `PagesRemaining`, `PagesAtRate`, `ExtractionCost`.
+
+### Changed
+
+- **Emails: each attachment is parsed once.** A forwarded email
+  (`message/rfc822`) is now parsed as an email whether or not it has a
+  filename. Before, its attachments were parsed twice when it had a filename,
+  and its text was dropped when it didn't.
+- **Signature images are skipped:** small inline images with a Content-ID
+  (logos in signatures, under 20 KB) are no longer OCR'd or sent to the model.
+- When an email's own body is HTML only, it is no longer replaced by the text
+  of a forwarded email.
+- The rule for which parts of an email are documents is
+  `iter_document_parts` (`clichefactory._engine.parsers.parser_utils.eml_utils`).
+  The ClicheFactory service will use the same function to bill emails, so
+  what is read and what is billed stay the same.
+
+### Internal
+
+- Tests run on every PR (Python 3.12 and 3.13); releases are published to
+  PyPI by GitHub Actions from version tags (see `RELEASE.md`).
+
 ## [0.9.0rc1] — 2026-11-13
 
 Release candidate: install it with `pip install clichefactory==0.9.0rc1`.
