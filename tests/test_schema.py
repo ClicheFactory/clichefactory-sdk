@@ -386,3 +386,43 @@ def test_schema_without_constraints_is_unchanged():
         "title": "R",
         "type": "object",
     }
+
+
+# --- allowed values on BatchConfig text fields -------------------------------
+
+
+def _with_field(field):
+    return {"root_model": "R", "definitions": [{"name": "R", "fields": [field]}]}
+
+
+def test_batch_config_text_field_with_enum():
+    config = _with_field(
+        {"name": "document_type", "type": "text", "enum": [" invoice", "credit_note "], "description": "Kind"}
+    )
+    prop = batch_config_to_canonical(config)["properties"]["document_type"]
+    assert prop == {"type": "string", "enum": ["invoice", "credit_note"], "description": "Kind"}
+    model = canonical_schema_to_pydantic(batch_config_to_canonical(config), "R")
+    assert model(document_type="invoice").document_type == "invoice"
+    with pytest.raises(pydantic.ValidationError):
+        model(document_type="receipt")
+
+
+@pytest.mark.parametrize("empty", [None, []])
+def test_batch_config_empty_enum_adds_nothing(empty):
+    prop = batch_config_to_canonical(_with_field({"name": "a", "type": "text", "enum": empty}))["properties"]["a"]
+    assert prop == {"type": "string"}
+
+
+@pytest.mark.parametrize(
+    "field, message",
+    [
+        ({"name": "n", "type": "integer", "enum": ["1"]}, "only supported on text"),
+        ({"name": "d", "type": "date", "enum": ["2026-01-01"]}, "only supported on text"),
+        ({"name": "a", "type": "text", "enum": "x,y"}, "list of non-empty strings"),
+        ({"name": "a", "type": "text", "enum": ["x", ""]}, "list of non-empty strings"),
+        ({"name": "a", "type": "text", "enum": ["x", " x"]}, "duplicate"),
+    ],
+)
+def test_batch_config_bad_enum_raises(field, message):
+    with pytest.raises(ValueError, match=message):
+        batch_config_to_canonical(_with_field(field))
