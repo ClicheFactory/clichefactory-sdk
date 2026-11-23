@@ -2,6 +2,45 @@
 
 All notable changes to `clichefactory` are documented in this file.
 
+## [0.10.0rc1] — 2026-11-23
+
+Release candidate: install it with `pip install clichefactory==0.10.0rc1`.
+
+### Added
+
+- **`enum` in schemas is kept.** A JSON Schema property with `enum` becomes a
+  field that only accepts those values (`Literal[...]`): the model is shown the
+  list, and any other value fails validation. Works on plain fields, on list
+  items and in nested models.
+- **Value constraints are enforced.** `pattern`, `minLength` / `maxLength` and
+  `minimum` / `maximum` become Pydantic constraints, so a value that breaks one
+  fails validation. With `allow_partial`, that is a partial result whose
+  `validation_errors` name the field. Patterns match anywhere unless anchored,
+  as in JSON Schema. A malformed pattern or bound raises `ValueError` naming
+  the field. `exclusiveMinimum` / `exclusiveMaximum` are still ignored, because
+  Gemini rejects them in a response schema.
+- **`boolean` fields in a BatchConfig** (`"type": "boolean"`) map to a JSON
+  Schema boolean.
+
+### Changed
+
+- **Field descriptions reach the model in local mode.** A BatchConfig field's
+  `description`, and a JSON Schema property's `description`, are now attached to
+  the Pydantic field, as the ClicheFactory service already did.
+- **Unknown BatchConfig field types raise `ValueError`** instead of silently
+  becoming text.
+- **Anthropic and OpenAI:** schema keywords their structured outputs reject
+  (Anthropic: `pattern`, length and numeric bounds; OpenAI: length bounds) are
+  moved into the field description as a hint instead of failing the call. The
+  reply is still validated against the full schema. Schemas without these
+  keywords are sent exactly as before.
+
+### Internal
+
+- `clichefactory._schema` matches `clichefactory_internal.contracts.model_schema`
+  again; `clichefactory._engine.contracts.model_schema` re-exports it instead of
+  keeping a second copy.
+
 ## [0.9.0] — 2026-11-14
 
 Same code as 0.9.0rc1, which was tested on the ClicheFactory dev environment.

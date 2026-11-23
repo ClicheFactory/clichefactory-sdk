@@ -18,6 +18,11 @@ from clichefactory._engine.ai_clients.mime_support import is_default_direct_byte
 from clichefactory._engine.ai_clients.prompts import DEFAULT_EXTRACTION_PROMPT, SIMPLE_OCR_PROMPT
 from clichefactory._engine.ai_clients.protocol import UnsupportedBytesMimeError
 from clichefactory._engine.ai_clients.json_utils import safe_json_loads
+from clichefactory._engine.ai_clients.schema_compat import (
+    OPENAI_UNSUPPORTED,
+    has_keywords,
+    move_to_description,
+)
 from clichefactory._extract_validation import validate_or_raise_raw
 
 if TYPE_CHECKING:
@@ -35,6 +40,29 @@ def _model_name_for_openai(name: str) -> str:
 
 # Reasoning models (o-series) reject the temperature parameter entirely.
 _NO_TEMPERATURE_PREFIXES = ("o1", "o3", "o4")
+
+
+def _response_format(schema: type[BaseModel]):
+    """The ``response_format`` for structured extraction with *schema*.
+
+    Normally the Pydantic class itself, as before. When the schema has string
+    length bounds, which OpenAI's strict mode rejects, they are moved into the
+    field descriptions and a JSON-schema ``response_format`` is sent instead;
+    the reply is then validated against *schema*, which still enforces them.
+    """
+    from openai.lib._parsing._completions import type_to_response_format_param
+
+    param = type_to_response_format_param(schema)
+    strict_schema = param["json_schema"]["schema"]
+    if not has_keywords(strict_schema, OPENAI_UNSUPPORTED):
+        return schema
+    return {
+        **param,
+        "json_schema": {
+            **param["json_schema"],
+            "schema": move_to_description(strict_schema, OPENAI_UNSUPPORTED),
+        },
+    }
 
 
 def _model_supports_temperature(model_name: str) -> bool:
@@ -272,7 +300,7 @@ class OpenAIAIClient:
             model=self._model_name,
             **self._chat_kwargs(),
             messages=[{"role": "user", "content": prompt}],
-            response_format=schema,
+            response_format=_response_format(schema),
         )
         self._record_usage(getattr(response, "usage", None))
         parsed = response.choices[0].message.parsed
