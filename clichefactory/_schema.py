@@ -5,10 +5,10 @@ and canonical JSON Schema -> Pydantic model builder.
 from __future__ import annotations
 
 import re
-from typing import Any, Type
+from typing import Annotated, Any, Literal, Optional, Type
 
 import jsonschema
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 # JSON Schema draft 2020-12 meta-schema for validation
 _DRAFT_2020_12_META = "https://json-schema.org/draft/2020-12/schema"
@@ -32,17 +32,27 @@ def validate_model_schema(schema: dict[str, Any]) -> None:
 
 
 def _batch_field_type_to_json_schema(field: dict[str, Any]) -> dict[str, Any]:
-    """Convert Emio FieldDefinition type to JSON Schema property."""
+    """Convert Emio FieldDefinition type to JSON Schema property.
+
+    An unknown type raises ValueError rather than falling back to a string: a
+    silent fallback would send e.g. a yes/no field to the model as free text.
+    """
     ft = field.get("type") or field.get("type_")
     if isinstance(ft, dict):
         return ft
-    t = (ft or "text").lower() if isinstance(ft, str) else "string"
+    if ft is None:
+        ft = "text"
+    if not isinstance(ft, str):
+        raise ValueError(f"field {field.get('name')!r} has unsupported type {ft!r}")
+    t = ft.lower()
     if t in ("text", "string"):
         return {"type": "string"}
     if t == "integer":
         return {"type": "integer"}
     if t in ("float", "number"):
         return {"type": "number"}
+    if t in ("boolean", "bool"):
+        return {"type": "boolean"}
     if t == "date":
         return {"type": "string", "format": "date"}
     if t == "list_of_models":
@@ -50,14 +60,23 @@ def _batch_field_type_to_json_schema(field: dict[str, Any]) -> dict[str, Any]:
         if not target:
             raise ValueError("list_of_models requires target_model")
         return {"type": "array", "items": {"$ref": f"#/$defs/{target}"}}
-    return {"type": "string"}
+    raise ValueError(f"field {field.get('name')!r} has unsupported type {ft!r}")
+
+
+def _description(value: Any) -> str | None:
+    """Return a usable description string, or None for missing/blank ones."""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def batch_config_to_canonical(config: dict[str, Any]) -> dict[str, Any]:
     """
     Convert Emio BatchConfig (root_model + definitions) to canonical JSON Schema.
     config must have "root_model" (str) and "definitions" (list of model defs).
-    Each definition: name, description?, fields: [{ name, type, required?, target_model? }].
+    Each definition: name, description?, fields: [{ name, type, required?, target_model?, description? }].
+    A field's description becomes its property's "description", so it reaches
+    the extraction prompt through canonical_schema_to_pydantic.
     """
     root_model = config.get("root_model")
     if not root_model:
@@ -79,6 +98,9 @@ def batch_config_to_canonical(config: dict[str, Any]) -> dict[str, Any]:
             if not fname:
                 continue
             prop = _batch_field_type_to_json_schema(f)
+            field_description = _description(f.get("description"))
+            if field_description:
+                prop = {**prop, "description": field_description}
             properties[fname] = prop
             if f.get("required", True):
                 required.append(fname)
@@ -120,6 +142,67 @@ def _json_schema_type_to_python(schema: dict[str, Any]) -> type:
     if t == "object":
         return dict
     return str
+
+
+# JSON Schema keyword -> Pydantic Field constraint, per Python base type. A keyword
+# that does not apply to the property's type is ignored, as JSON Schema does.
+# exclusiveMinimum / exclusiveMaximum are deliberately left out (and so ignored, as
+# before): google-genai rejects them in a response schema before sending the request,
+# which would fail every Gemini extraction that used one.
+_STRING_CONSTRAINTS = {"pattern": "pattern", "minLength": "min_length", "maxLength": "max_length"}
+_NUMBER_CONSTRAINTS = {"minimum": "ge", "maximum": "le"}
+# Patterns are validated with Python's ``re`` (search semantics, like JSON Schema's
+# unanchored ``pattern``), which also accepts look-arounds the default Rust engine rejects.
+_MODEL_CONFIG = ConfigDict(regex_engine="python-re")
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _scalar_annotation(schema: dict[str, Any], where: str) -> Any:
+    """Python annotation for a scalar JSON Schema, keeping ``enum`` and value constraints.
+
+    ``enum`` becomes ``Literal[...]`` (offered to the model and enforced), and
+    ``pattern`` / ``minLength`` / ``maxLength`` / ``minimum`` / ``maximum`` become
+    Pydantic constraints, so a value that breaks them fails validation (and shows up
+    in ``validation_errors`` for a partial result). Without any of these keywords
+    the annotation is the bare type, exactly as before.
+    """
+    enum = schema.get("enum")
+    if isinstance(enum, list) and enum and all(
+        v is None or isinstance(v, (str, int, float, bool)) for v in enum
+    ):
+        return Literal[tuple(enum)]
+
+    py_type = _json_schema_type_to_python(schema)
+    constraints: dict[str, Any] = {}
+    if py_type is str:
+        for key, kwarg in _STRING_CONSTRAINTS.items():
+            value = schema.get(key)
+            if value is None:
+                continue
+            if key == "pattern":
+                if not isinstance(value, str):
+                    raise ValueError(f"{where}: pattern must be a string")
+                try:
+                    re.compile(value)
+                except re.error as e:
+                    raise ValueError(f"{where}: invalid pattern {value!r}: {e}") from e
+            elif not (isinstance(value, int) and not isinstance(value, bool) and value >= 0):
+                raise ValueError(f"{where}: {key} must be a non-negative integer")
+            constraints[kwarg] = value
+    elif py_type in (int, float):
+        for key, kwarg in _NUMBER_CONSTRAINTS.items():
+            value = schema.get(key)
+            if value is None:
+                continue
+            if not _is_number(value):
+                raise ValueError(f"{where}: {key} must be a number")
+            constraints[kwarg] = value
+    if constraints:
+        return Annotated[py_type, Field(**constraints)]
+    return py_type
 
 
 def _build_model_from_json_schema(
@@ -173,7 +256,7 @@ def _build_model_from_json_schema(
                     else:
                         field_definitions[prop_name] = (list[dict], ...)
                 else:
-                    item_type = _json_schema_type_to_python(items)
+                    item_type = _scalar_annotation(items, f"{class_name}.{prop_name}[]")
                     field_definitions[prop_name] = (list[item_type], ...)
             else:
                 field_definitions[prop_name] = (list[dict], ...)
@@ -185,9 +268,18 @@ def _build_model_from_json_schema(
             )
             field_definitions[prop_name] = (nested, ...)
             continue
-        py_type = _json_schema_type_to_python(prop_schema)
-        field_definitions[prop_name] = (py_type, ...) if prop_name in required else (py_type | None, None)
-    return create_model(class_name, **field_definitions)
+        py_type = _scalar_annotation(prop_schema, f"{class_name}.{prop_name}")
+        field_definitions[prop_name] = (
+            (py_type, ...) if prop_name in required else (Optional[py_type], None)
+        )
+    # Descriptions are attached only where present, so a schema without any
+    # builds exactly the model (and JSON schema / prompt) it always did.
+    for prop_name, prop_schema in properties.items():
+        field_description = _description(prop_schema.get("description")) if isinstance(prop_schema, dict) else None
+        if field_description:
+            annotation, default = field_definitions[prop_name]
+            field_definitions[prop_name] = (annotation, Field(default, description=field_description))
+    return create_model(class_name, __config__=_MODEL_CONFIG, **field_definitions)
 
 
 def simple_schema_to_canonical(schema: dict[str, Any]) -> dict[str, Any]:

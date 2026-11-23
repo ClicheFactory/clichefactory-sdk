@@ -15,6 +15,10 @@ from clichefactory._engine.ai_clients.mime_support import is_default_direct_byte
 from clichefactory._engine.ai_clients.prompts import DEFAULT_EXTRACTION_PROMPT
 from clichefactory._engine.ai_clients.protocol import UnsupportedBytesMimeError
 from clichefactory._engine.ai_clients.json_utils import safe_json_loads
+from clichefactory._engine.ai_clients.schema_compat import (
+    ANTHROPIC_UNSUPPORTED,
+    move_to_description,
+)
 from clichefactory._extract_validation import validate_or_raise_raw
 
 if TYPE_CHECKING:
@@ -59,6 +63,19 @@ def _add_additional_properties_false(schema: dict) -> dict:
 
     _walk(schema)
     return schema
+
+
+def _output_schema(schema: type[BaseModel]) -> dict:
+    """The JSON Schema sent as Claude's output format.
+
+    Value constraints Claude's structured outputs reject (string lengths, numeric
+    bounds, patterns) are moved into the field descriptions; the response is
+    still validated against *schema*, which enforces them.
+    """
+    return move_to_description(
+        _add_additional_properties_false(schema.model_json_schema()),
+        ANTHROPIC_UNSUPPORTED,
+    )
 
 
 def _anthropic_media_block(content: bytes, mime: str) -> dict:
@@ -303,7 +320,7 @@ class AnthropicAIClient:
             output_config={
                 "format": {
                     "type": "json_schema",
-                    "schema": _add_additional_properties_false(schema.model_json_schema()),
+                    "schema": _output_schema(schema),
                 }
             },
         )
@@ -336,7 +353,7 @@ class AnthropicAIClient:
             output_config={
                 "format": {
                     "type": "json_schema",
-                    "schema": _add_additional_properties_false(schema.model_json_schema()),
+                    "schema": _output_schema(schema),
                 }
             },
         )
