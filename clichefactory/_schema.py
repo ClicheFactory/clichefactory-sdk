@@ -63,6 +63,22 @@ def _batch_field_type_to_json_schema(field: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"field {field.get('name')!r} has unsupported type {ft!r}")
 
 
+def _allowed_values(field: dict[str, Any], prop: dict[str, Any]) -> list[str] | None:
+    """A text field's ``enum`` (its allowed values), validated; None when it has none."""
+    values = field.get("enum")
+    if values is None or values == []:
+        return None
+    name = field.get("name")
+    if prop.get("type") != "string" or prop.get("format"):
+        raise ValueError(f"field {name!r}: allowed values (enum) are only supported on text fields")
+    if not isinstance(values, list) or not all(isinstance(v, str) and v.strip() for v in values):
+        raise ValueError(f"field {name!r}: enum must be a list of non-empty strings")
+    cleaned = [v.strip() for v in values]
+    if len(set(cleaned)) != len(cleaned):
+        raise ValueError(f"field {name!r}: enum has duplicate values")
+    return cleaned
+
+
 def _description(value: Any) -> str | None:
     """Return a usable description string, or None for missing/blank ones."""
     if isinstance(value, str) and value.strip():
@@ -74,9 +90,10 @@ def batch_config_to_canonical(config: dict[str, Any]) -> dict[str, Any]:
     """
     Convert Emio BatchConfig (root_model + definitions) to canonical JSON Schema.
     config must have "root_model" (str) and "definitions" (list of model defs).
-    Each definition: name, description?, fields: [{ name, type, required?, target_model?, description? }].
+    Each definition: name, description?, fields: [{ name, type, required?, target_model?, description?, enum? }].
     A field's description becomes its property's "description", so it reaches
-    the extraction prompt through canonical_schema_to_pydantic.
+    the extraction prompt through canonical_schema_to_pydantic. A text field's
+    ``enum`` (allowed values) becomes the property's "enum".
     """
     root_model = config.get("root_model")
     if not root_model:
@@ -98,6 +115,10 @@ def batch_config_to_canonical(config: dict[str, Any]) -> dict[str, Any]:
             if not fname:
                 continue
             prop = _batch_field_type_to_json_schema(f)
+            if not isinstance(f.get("type") or f.get("type_"), dict):
+                allowed = _allowed_values(f, prop)
+                if allowed:
+                    prop = {**prop, "enum": allowed}
             field_description = _description(f.get("description"))
             if field_description:
                 prop = {**prop, "description": field_description}
